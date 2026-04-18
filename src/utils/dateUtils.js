@@ -1,0 +1,45 @@
+// Date strings are LOCAL time (America/New_York). Never use .toISOString().split('T')[0].
+
+export function toLocalDateStr(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function toLocalMonthStr(d = new Date()) {
+  return toLocalDateStr(d).slice(0, 7); // YYYY-MM
+}
+
+export function offsetDateStr(dateStr, offsetDays) {
+  const d = new Date(dateStr + 'T12:00:00'); // noon to avoid DST issues
+  d.setDate(d.getDate() + offsetDays);
+  return toLocalDateStr(d);
+}
+
+export function monthStart(monthStr = toLocalMonthStr()) {
+  return `${monthStr}-01`;
+}
+
+export function monthEnd(monthStr = toLocalMonthStr()) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const last = new Date(y, m, 0); // day 0 of next month == last day of this month
+  return toLocalDateStr(last);
+}
+
+export function monthsBetween(fromStr, toStr) {
+  const out = [];
+  let [y, m] = fromStr.split('-').map(Number);
+  const [yEnd, mEnd] = toStr.split('-').map(Number);
+  while (y < yEnd || (y === yEnd && m <= mEnd)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return out;
+}
+
+export function humanDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
