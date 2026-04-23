@@ -5,6 +5,7 @@ import { functions } from '../firebase-config';
 import { money, signedMoney, pnlClass } from '../utils/format';
 import { useToast } from './Toast';
 
+
 const RANGES = [
   { id: 'M', label: '1M', days: 30 },
   { id: '3M', label: '3M', days: 90 },
@@ -15,7 +16,28 @@ const RANGES = [
 export default function NetWorthChart({ history, currentNetWorth }) {
   const [range, setRange] = useState('3M');
   const [snapshotting, setSnapshotting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
   const toast = useToast();
+
+  const runImport = async () => {
+    setImporting(true);
+    try {
+      const parsed = JSON.parse(importText);
+      if (!Array.isArray(parsed)) throw new Error('Top level must be an array');
+      const fn = httpsCallable(functions, 'importNetWorthHistory');
+      const res = await fn({ records: parsed });
+      toast?.(`Imported ${res.data.imported} snapshots`, 'success');
+      setImportText('');
+      setImportOpen(false);
+    } catch (e) {
+      console.error(e);
+      toast?.(e.message || 'Import failed', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const rangeCfg = RANGES.find(r => r.id === range);
 
@@ -102,8 +124,38 @@ export default function NetWorthChart({ history, currentNetWorth }) {
           >
             {snapshotting ? '…' : '↻'}
           </button>
+          <button
+            onClick={() => setImportOpen(s => !s)}
+            className="text-slate-400 hover:text-slate-200 text-xs"
+            title="Backfill history (JSON paste)"
+          >
+            ⇪
+          </button>
         </div>
       </div>
+
+      {importOpen && (
+        <div className="mb-3 bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-2">
+          <p className="text-xs text-slate-400">
+            Paste a JSON array: <code className="text-emerald-400">{"[{\"date\":\"2025-01-01\",\"netWorth\":2550000}, …]"}</code>
+          </p>
+          <textarea
+            rows={6}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono"
+            placeholder='[{"date":"2024-04-12","netWorth":2280000}]'
+          />
+          <div className="flex gap-2">
+            <button onClick={runImport} disabled={importing || !importText.trim()}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg">
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+            <button onClick={() => { setImportOpen(false); setImportText(''); }}
+              className="text-slate-400 hover:text-slate-200 text-xs">Cancel</button>
+          </div>
+        </div>
+      )}
       <div className="h-56 -mx-2">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>

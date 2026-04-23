@@ -153,6 +153,40 @@ export const snapshotNetWorth = onCall(async (req) => {
   return snapshotNetWorthNow();
 });
 
+/* ---------------------- importNetWorthHistory (backfill) ---------------------- */
+
+export const importNetWorthHistory = onCall(async (req) => {
+  assertOwner(req.auth);
+  const { records } = req.data || {};
+  if (!Array.isArray(records)) throw new HttpsError('invalid-argument', 'records must be an array');
+  const database = db();
+  let imported = 0;
+  let batch = database.batch();
+  let batchSize = 0;
+  for (const r of records) {
+    if (!r?.date || r?.netWorth == null) continue;
+    // Date must be YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date)) continue;
+    batch.set(database.collection('netWorthHistory').doc(r.date), {
+      date: r.date,
+      netWorth: Number(r.netWorth),
+      assets: r.assets != null ? Number(r.assets) : null,
+      liabilities: r.liabilities != null ? Number(r.liabilities) : null,
+      imported: true,
+      recordedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    batchSize++;
+    imported++;
+    if (batchSize >= 450) {
+      await batch.commit();
+      batch = database.batch();
+      batchSize = 0;
+    }
+  }
+  if (batchSize > 0) await batch.commit();
+  return { ok: true, imported };
+});
+
 async function snapshotNetWorthNow() {
   const database = db();
 
