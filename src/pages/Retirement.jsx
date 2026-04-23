@@ -2,11 +2,16 @@ import { useMemo, useState, useEffect } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Legend } from 'recharts';
 import { money, pct } from '../utils/format';
 import { simulate } from '../utils/monteCarlo';
+import { computeAge } from '../utils/dateUtils';
+import { USER_PROFILE } from '../constants';
+
+// Current age always computed from birthdate — stays correct as time passes.
+const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
 
 // Defaults tuned to match Empower's retirement planner inputs so you can cross-check.
 // Override in the UI or save your own via "Save inputs".
 const DEFAULTS = {
-  startAge: 50,
+  startAge: CURRENT_AGE,
   retireAge: 60,
   endAge: 90,
   annualContribution: 125000,
@@ -25,9 +30,12 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
 
   // Starting balance defaults to investments (liquid, growing). Net worth includes home equity which
   // usually isn't drawn down, but user can override.
+  // Current age always comes from birthdate so it stays correct as time passes —
+  // saved startAge is ignored so you can't end up with a stale age stuck in Firestore.
   const [inputs, setInputs] = useState(() => ({
     ...DEFAULTS,
     ...saved,
+    startAge: CURRENT_AGE,
     startingBalance: saved.startingBalance ?? (investmentsTotal || netWorth || 0),
   }));
 
@@ -110,7 +118,7 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
         <div>
           <h1 className="text-2xl font-bold">Retirement Planner</h1>
           <p className="text-slate-400 text-sm">
-            Monte Carlo simulation · {inputs.runs.toLocaleString()} runs · real dollars
+            Age {CURRENT_AGE} · Monte Carlo · {inputs.runs.toLocaleString()} runs · real dollars
           </p>
         </div>
         <div className="flex items-center gap-3">

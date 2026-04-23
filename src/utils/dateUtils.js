@@ -43,3 +43,26 @@ export function humanDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+
+/**
+ * Integer years between birthdate (YYYY-MM-DD) and today, local time.
+ * Accounts for whether this year's birthday has passed yet.
+ */
+export function computeAge(birthdate, today = new Date()) {
+  if (!birthdate) return null;
+  const [by, bm, bd] = birthdate.split('-').map(Number);
+  let age = today.getFullYear() - by;
+  const beforeBirthday =
+    today.getMonth() + 1 < bm ||
+    (today.getMonth() + 1 === bm && today.getDate() < bd);
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
+/** Fractional age in years (useful for "N.5 years old"). */
+export function computeAgeFractional(birthdate, today = new Date()) {
+  if (!birthdate) return null;
+  const birth = new Date(birthdate + 'T00:00:00');
+  const ms = today - birth;
+  return ms / (365.25 * 24 * 60 * 60 * 1000);
+}

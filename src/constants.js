@@ -1,5 +1,11 @@
 export const ALLOWED_EMAILS = ['mdulin@gmail.com'];
 
+// User profile — single-user app, so hardcoded here rather than stored in Firestore.
+export const USER_PROFILE = {
+  name: 'Mike Dulin',
+  birthdate: '1967-01-11',   // YYYY-MM-DD, local
+};
+
 export const COLLECTIONS = {
   FINANCE_DATA: 'finances',        // Single user-doc for config/budgets/scenarios
   ACCOUNTS: 'accounts',             // Written by Cloud Functions on Plaid sync
