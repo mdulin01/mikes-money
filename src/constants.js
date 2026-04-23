@@ -5,6 +5,9 @@ export const COLLECTIONS = {
   ACCOUNTS: 'accounts',             // Written by Cloud Functions on Plaid sync
   TRANSACTIONS: 'transactions',     // Written by Cloud Functions; categorization editable
   PLAID_ITEMS: 'plaidItems',        // Link metadata (tokens stored server-side only)
+  HOLDINGS: 'holdings',             // Investment positions (ticker, qty, value)
+  LIABILITIES: 'liabilities',       // Credit/mortgage/student loan detail
+  NET_WORTH_HISTORY: 'netWorthHistory', // Daily snapshots
 };
 
 // Single user-doc id
@@ -13,9 +16,13 @@ export const USER_DOC_ID = 'user-money-data';
 export const SECTIONS = [
   { id: 'dashboard',   label: 'Dashboard',   emoji: '📊' },
   { id: 'accounts',    label: 'Accounts',    emoji: '🏦' },
+  { id: 'holdings',    label: 'Holdings',    emoji: '📈' },
+  { id: 'allocation',  label: 'Allocate',    emoji: '🥧' },
+  { id: 'retirement',  label: 'Retire',      emoji: '🏖️' },
+  { id: 'checkup',     label: 'Checkup',     emoji: '🩺' },
   { id: 'transactions', label: 'Txns',       emoji: '💳' },
   { id: 'budgets',     label: 'Budgets',     emoji: '🎯' },
-  { id: 'cashflow',    label: 'Cash Flow',   emoji: '📈' },
+  { id: 'cashflow',    label: 'Cash Flow',   emoji: '💰' },
   { id: 'scenarios',   label: 'Scenarios',   emoji: '🔮' },
 ];
 

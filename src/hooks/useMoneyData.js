@@ -25,6 +25,9 @@ export function useMoneyData(user) {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [recentTxns, setRecentTxns] = useState([]);
+  const [holdings, setHoldings] = useState([]);
+  const [liabilities, setLiabilities] = useState([]);
+  const [netWorthHistory, setNetWorthHistory] = useState([]);
 
   // Main config doc (single-user)
   useEffect(() => {
@@ -65,6 +68,34 @@ export function useMoneyData(user) {
     const unsub = onSnapshot(q, (snap) => {
       setRecentTxns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => console.error('transactions listener error:', err));
+    return unsub;
+  }, [user?.uid]);
+
+  // Investment holdings (positions, securities)
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(collection(db, COLLECTIONS.HOLDINGS), (snap) => {
+      setHoldings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('holdings listener error:', err));
+    return unsub;
+  }, [user?.uid]);
+
+  // Liabilities (credit cards, mortgages, student loans — metadata)
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(collection(db, COLLECTIONS.LIABILITIES), (snap) => {
+      setLiabilities(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('liabilities listener error:', err));
+    return unsub;
+  }, [user?.uid]);
+
+  // Net worth daily snapshots
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, COLLECTIONS.NET_WORTH_HISTORY), orderBy('date', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setNetWorthHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('netWorthHistory listener error:', err));
     return unsub;
   }, [user?.uid]);
 
@@ -140,12 +171,21 @@ export function useMoneyData(user) {
       .reduce((sum, t) => sum + t.amount, 0);
   }, [recentTxns]);
 
+  const investmentsTotal = useMemo(
+    () => holdings.reduce((s, h) => s + (h.institutionValue || 0), 0),
+    [holdings],
+  );
+
   return {
     data,
     loading,
     accounts,
     recentTxns,
+    holdings,
+    liabilities,
+    netWorthHistory,
     netWorth,
+    investmentsTotal,
     currentMonthSpend,
     updateConfig,
     setBudget,

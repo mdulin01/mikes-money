@@ -23,8 +23,14 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid';
 
-initializeApp();
-const db = getFirestore();
+// Lazy-init Firebase Admin so module load stays fast (Firebase deploy
+// analyzer times out after 10s on any blocking top-level work).
+let _app, _db;
+function db() {
+  if (!_app) _app = initializeApp();
+  if (!_db) _db = getFirestore();
+  return _db;
+}
 
 const PLAID_CLIENT_ID = defineSecret('PLAID_CLIENT_ID');
 const PLAID_SECRET = defineSecret('PLAID_SECRET');
@@ -61,7 +67,10 @@ export const createLinkToken = onCall(
     const res = await client.linkTokenCreate({
       user: { client_user_id: req.auth.uid },
       client_name: "Mike's Money",
+      // `products` = required; the bank must support all of these.
+      // `optional_products` = requested if supported, ignored if not — safest for mixed portfolios.
       products: [Products.Transactions],
+      optional_products: [Products.Investments, Products.Liabilities],
       country_codes: [CountryCode.Us],
       language: 'en',
     });
@@ -83,7 +92,7 @@ export const exchangePublicToken = onCall(
     const access_token = exchange.data.access_token;
     const item_id = exchange.data.item_id;
 
-    await db.collection('plaidItems').doc(item_id).set({
+    await db().collection('plaidItems').doc(item_id).set({
       access_token,
       institution: institution || null,
       linkedAt: FieldValue.serverTimestamp(),
@@ -119,19 +128,100 @@ export const dailyTransactionSync = onSchedule(
     secrets: [PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV],
   },
   async () => {
-    const items = await db.collection('plaidItems').get();
+    const items = await db().collection('plaidItems').get();
     for (const item of items.docs) {
       try { await syncOne(item.id); }
       catch (e) { console.error(`sync failed for ${item.id}:`, e); }
     }
+    // Snapshot AFTER Plaid pulls fresh data
+    await snapshotNetWorthNow();
   },
 );
+
+/* --------------------------- dailyNetWorthSnapshot ------------------------ */
+// Separate schedule so history still tracks even if Plaid sync errors out.
+
+export const dailyNetWorthSnapshot = onSchedule(
+  { schedule: 'every day 07:00', timeZone: 'America/New_York' },
+  async () => { await snapshotNetWorthNow(); },
+);
+
+/* ----------------------- manual snapshot (on demand) ---------------------- */
+
+export const snapshotNetWorth = onCall(async (req) => {
+  assertOwner(req.auth);
+  return snapshotNetWorthNow();
+});
+
+async function snapshotNetWorthNow() {
+  const database = db();
+
+  // Pull accounts (server-written balances from Plaid)
+  const [acctsSnap, holdingsSnap, configSnap] = await Promise.all([
+    database.collection('accounts').get(),
+    database.collection('holdings').get(),
+    database.collection('finances').doc('user-money-data').get(),
+  ]);
+
+  let cash = 0, investments = 0, credit = 0, loan = 0, mortgage = 0, other = 0;
+
+  for (const doc of acctsSnap.docs) {
+    const a = doc.data();
+    const bal = a.balance || 0;
+    switch (a.type) {
+      case 'depository': cash += bal; break;
+      case 'investment': investments += bal; break;
+      case 'credit':     credit   += bal; break;
+      case 'loan':       loan     += bal; break;
+      case 'mortgage':   mortgage += bal; break;
+      default:           other    += bal;
+    }
+  }
+
+  // Holdings total (some Plaid accounts report investment balance differently;
+  // we take whichever is higher to avoid double-counting or missing positions)
+  const holdingsTotal = holdingsSnap.docs.reduce(
+    (s, d) => s + (d.data().institutionValue || 0), 0,
+  );
+  if (holdingsTotal > investments) investments = holdingsTotal;
+
+  // Manual accounts
+  const manual = configSnap.exists ? (configSnap.data().manualAccounts || []) : [];
+  let manualAssets = 0, manualLiabilities = 0;
+  for (const m of manual) {
+    if (m.side === 'liability') manualLiabilities += (m.balance || 0);
+    else manualAssets += (m.balance || 0);
+  }
+
+  const assets = cash + investments + manualAssets + Math.max(0, other);
+  const liabilities = credit + loan + mortgage + manualLiabilities + Math.max(0, -other);
+  const netWorth = assets - liabilities;
+
+  // YYYY-MM-DD in America/New_York
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+
+  await database.collection('netWorthHistory').doc(dateStr).set({
+    date: dateStr,
+    netWorth, assets, liabilities,
+    cash, investments, manualAssets, manualLiabilities,
+    credit, loan, mortgage,
+    accountCount: acctsSnap.size,
+    holdingCount: holdingsSnap.size,
+    recordedAt: FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true, date: dateStr, netWorth, assets, liabilities };
+}
 
 /* ---------------------------- helpers (internal) ---------------------------- */
 
 async function syncOne(itemId) {
   const client = plaidClient();
-  const ref = db.collection('plaidItems').doc(itemId);
+  const ref = db().collection('plaidItems').doc(itemId);
   const snap = await ref.get();
   if (!snap.exists) throw new Error(`item ${itemId} not found`);
   const { access_token, cursor } = snap.data();
@@ -146,18 +236,18 @@ async function syncOne(itemId) {
       access_token,
       cursor: nextCursor || undefined,
     });
-    const batch = db.batch();
+    const batch = db().batch();
 
     for (const t of res.data.added) {
-      batch.set(db.collection('transactions').doc(t.transaction_id), normalizeTxn(t, itemId));
+      batch.set(db().collection('transactions').doc(t.transaction_id), normalizeTxn(t, itemId));
       added++;
     }
     for (const t of res.data.modified) {
-      batch.set(db.collection('transactions').doc(t.transaction_id), normalizeTxn(t, itemId), { merge: true });
+      batch.set(db().collection('transactions').doc(t.transaction_id), normalizeTxn(t, itemId), { merge: true });
       modified++;
     }
     for (const t of res.data.removed) {
-      batch.delete(db.collection('transactions').doc(t.transaction_id));
+      batch.delete(db().collection('transactions').doc(t.transaction_id));
       removed++;
     }
     await batch.commit();
@@ -168,9 +258,9 @@ async function syncOne(itemId) {
 
   // Refresh account balances
   const accts = await client.accountsGet({ access_token });
-  const batch = db.batch();
+  const batch = db().batch();
   for (const a of accts.data.accounts) {
-    batch.set(db.collection('accounts').doc(a.account_id), {
+    batch.set(db().collection('accounts').doc(a.account_id), {
       itemId,
       name: a.name,
       officialName: a.official_name || null,
@@ -186,8 +276,94 @@ async function syncOne(itemId) {
   }
   await batch.commit();
 
+  // Investments: holdings + securities (best-effort — only some accounts support it)
+  let holdingsSynced = 0;
+  try {
+    const holdingsRes = await client.investmentsHoldingsGet({ access_token });
+    const securitiesById = Object.fromEntries(
+      (holdingsRes.data.securities || []).map((s) => [s.security_id, s]),
+    );
+    const hBatch = db().batch();
+    for (const h of holdingsRes.data.holdings || []) {
+      const s = securitiesById[h.security_id] || {};
+      const id = `${h.account_id}_${h.security_id}`;
+      hBatch.set(db().collection('holdings').doc(id), {
+        itemId,
+        accountId: h.account_id,
+        securityId: h.security_id,
+        ticker: s.ticker_symbol || null,
+        name: s.name || null,
+        type: s.type || null,                              // equity, etf, mutual fund, cash, etc.
+        isCashEquivalent: !!s.is_cash_equivalent,
+        quantity: h.quantity ?? 0,
+        institutionPrice: h.institution_price ?? null,
+        institutionValue: h.institution_value ?? 0,        // what the account shows
+        costBasis: h.cost_basis ?? null,
+        currency: h.iso_currency_code || 'USD',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      holdingsSynced++;
+    }
+    await hBatch.commit();
+  } catch (e) {
+    // Bank doesn't support Investments, or product not authorized — skip silently
+    if (e?.response?.data?.error_code !== 'PRODUCTS_NOT_SUPPORTED' &&
+        e?.response?.data?.error_code !== 'NO_INVESTMENT_ACCOUNTS') {
+      console.warn(`holdings sync skipped for ${itemId}:`, e?.response?.data?.error_code || e.message);
+    }
+  }
+
+  // Liabilities: credit card APRs, loan details, mortgage data
+  let liabilitiesSynced = 0;
+  try {
+    const liabRes = await client.liabilitiesGet({ access_token });
+    const liab = liabRes.data.liabilities || {};
+    const lBatch = db().batch();
+    for (const c of liab.credit || []) {
+      lBatch.set(db().collection('liabilities').doc(c.account_id), {
+        itemId, accountId: c.account_id, kind: 'credit',
+        lastStatementBalance: c.last_statement_balance ?? null,
+        minPayment: c.minimum_payment_amount ?? null,
+        nextPaymentDueDate: c.next_payment_due_date ?? null,
+        aprs: c.aprs || [],
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      liabilitiesSynced++;
+    }
+    for (const m of liab.mortgage || []) {
+      lBatch.set(db().collection('liabilities').doc(m.account_id), {
+        itemId, accountId: m.account_id, kind: 'mortgage',
+        interestRate: m.interest_rate?.percentage ?? null,
+        rateType: m.interest_rate?.type ?? null,
+        originationDate: m.origination_date ?? null,
+        maturityDate: m.maturity_date ?? null,
+        originationPrincipalAmount: m.origination_principal_amount ?? null,
+        currentLateFee: m.current_late_fee ?? null,
+        nextMonthlyPayment: m.next_monthly_payment ?? null,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      liabilitiesSynced++;
+    }
+    for (const s of liab.student || []) {
+      lBatch.set(db().collection('liabilities').doc(s.account_id), {
+        itemId, accountId: s.account_id, kind: 'student',
+        interestRate: s.interest_rate_percentage ?? null,
+        originationDate: s.origination_date ?? null,
+        expectedPayoffDate: s.expected_payoff_date ?? null,
+        minPayment: s.minimum_payment_amount ?? null,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      liabilitiesSynced++;
+    }
+    await lBatch.commit();
+  } catch (e) {
+    if (e?.response?.data?.error_code !== 'PRODUCTS_NOT_SUPPORTED') {
+      console.warn(`liabilities sync skipped for ${itemId}:`, e?.response?.data?.error_code || e.message);
+    }
+  }
+
   await ref.update({ cursor: nextCursor, lastSyncedAt: FieldValue.serverTimestamp() });
-  return { added, modified, removed };
+  return { added, modified, removed, holdingsSynced, liabilitiesSynced };
 }
 
 function normalizeTxn(t, itemId) {

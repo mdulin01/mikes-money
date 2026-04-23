@@ -38,5 +38,23 @@ service cloud.firestore {
       allow read: if isOwner();
       allow write: if false;
     }
+
+    // Investment holdings (positions, securities — server-written)
+    match /holdings/{holdingId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // Liabilities (credit card APRs, mortgage terms, student loans — server-written)
+    match /liabilities/{liabId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // Net worth history (daily snapshots — server-written)
+    match /netWorthHistory/{dateStr} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
   }
 }

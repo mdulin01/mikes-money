@@ -7,6 +7,10 @@ import LoadingScreen from './components/LoadingScreen';
 import Nav from './components/Nav';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
+import Holdings from './pages/Holdings';
+import Allocation from './pages/Allocation';
+import Retirement from './pages/Retirement';
+import Checkup from './pages/Checkup';
 import Transactions from './pages/Transactions';
 import Budgets from './pages/Budgets';
 import CashFlow from './pages/CashFlow';
@@ -28,6 +32,10 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard {...money} />} />
             <Route path="/accounts" element={<Accounts {...money} />} />
+            <Route path="/holdings" element={<Holdings {...money} />} />
+            <Route path="/allocation" element={<Allocation {...money} />} />
+            <Route path="/retirement" element={<Retirement {...money} />} />
+            <Route path="/checkup" element={<Checkup {...money} />} />
             <Route path="/transactions" element={<Transactions {...money} />} />
             <Route path="/budgets" element={<Budgets {...money} />} />
             <Route path="/cashflow" element={<CashFlow {...money} />} />

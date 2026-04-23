@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { money, signedMoney, pnlClass } from '../utils/format';
 import { toLocalMonthStr, monthStart } from '../utils/dateUtils';
 import { ACCOUNT_TYPES } from '../constants';
+import NetWorthChart from '../components/NetWorthChart';
 
-export default function Dashboard({ data, accounts, recentTxns, netWorth, currentMonthSpend }) {
+export default function Dashboard({ data, accounts, recentTxns, netWorth, currentMonthSpend, netWorthHistory }) {
   const month = toLocalMonthStr();
 
   // Group accounts by asset side
@@ -47,6 +48,9 @@ export default function Dashboard({ data, accounts, recentTxns, netWorth, curren
         <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
         <Tile label="Savings rate (mo)" value={`${(savingsRate * 100).toFixed(0)}%`} tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'} />
       </section>
+
+      {/* Net worth history */}
+      <NetWorthChart history={netWorthHistory} currentNetWorth={netWorth} />
 
       {/* Asset/liability breakdown */}
       <section className="grid md:grid-cols-2 gap-4">

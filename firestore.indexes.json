@@ -4,13 +4,6 @@
       "collectionGroup": "transactions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "date", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
-      "fields": [
         { "fieldPath": "accountId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]

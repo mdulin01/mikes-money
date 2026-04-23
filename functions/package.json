@@ -2,7 +2,7 @@
   "name": "mikes-money-functions",
   "description": "Cloud Functions for Mike's Money (Plaid integration)",
   "type": "module",
-  "engines": { "node": "20" },
+  "engines": { "node": ">=22" },
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
