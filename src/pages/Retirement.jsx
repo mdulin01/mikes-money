@@ -173,6 +173,49 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
         </section>
       )}
 
+      {/* Chart */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">
+          Projected portfolio value (10th / 50th / 90th percentile)
+        </h2>
+        <div className="h-80">
+          {computing ? (
+            <div className="h-full flex items-center justify-center text-slate-500 text-sm animate-pulse">
+              Simulating {inputs.runs.toLocaleString()} scenarios…
+            </div>
+          ) : result && chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData}>
+                <defs>
+                  <linearGradient id="coneFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="age" stroke="#94a3b8" style={{ fontSize: 11 }} />
+                <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} width={80}
+                       tickFormatter={(v) => money(v)} />
+                <Tooltip
+                  formatter={(v, k) => [money(Math.round(v)), k === 'p50' ? 'Median' : k === 'p10' ? 'p10' : 'p90']}
+                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                />
+                <Area type="monotone" dataKey="p10" stackId="cone" stroke="none" fill="transparent" />
+                <Area type="monotone" dataKey="p10to50" stackId="cone" stroke="none" fill="url(#coneFill)" />
+                <Area type="monotone" dataKey="p50to90" stackId="cone" stroke="none" fill="url(#coneFill)" />
+                <Line type="monotone" dataKey="p50" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="p10" stroke="#f43f5e" strokeWidth={1} dot={false} strokeDasharray="3 3" />
+                <Line type="monotone" dataKey="p90" stroke="#06b6d4" strokeWidth={1} dot={false} strokeDasharray="3 3" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : null}
+        </div>
+        <p className="text-xs text-slate-500 mt-2">
+          Green line = median outcome. Shaded band = 10th to 90th percentile. Assumes independent annual returns
+          (US stocks 7% real ±17%, bonds 2% ±6%). Sequence-of-returns risk and correlation aren't modeled.
+        </p>
+      </section>
+
       {/* Inputs */}
       <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <h2 className="text-sm font-semibold text-slate-300 mb-3">Inputs</h2>
@@ -249,48 +292,6 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
         </div>
       </section>
 
-      {/* Chart */}
-      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-slate-300 mb-3">
-          Projected portfolio value (10th / 50th / 90th percentile)
-        </h2>
-        <div className="h-80">
-          {computing ? (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm animate-pulse">
-              Simulating {inputs.runs.toLocaleString()} scenarios…
-            </div>
-          ) : result && chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData}>
-                <defs>
-                  <linearGradient id="coneFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="age" stroke="#94a3b8" style={{ fontSize: 11 }} />
-                <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} width={80}
-                       tickFormatter={(v) => money(v)} />
-                <Tooltip
-                  formatter={(v, k) => [money(Math.round(v)), k === 'p50' ? 'Median' : k === 'p10' ? 'p10' : 'p90']}
-                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-                />
-                <Area type="monotone" dataKey="p10" stackId="cone" stroke="none" fill="transparent" />
-                <Area type="monotone" dataKey="p10to50" stackId="cone" stroke="none" fill="url(#coneFill)" />
-                <Area type="monotone" dataKey="p50to90" stackId="cone" stroke="none" fill="url(#coneFill)" />
-                <Line type="monotone" dataKey="p50" stroke="#10b981" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="p10" stroke="#f43f5e" strokeWidth={1} dot={false} strokeDasharray="3 3" />
-                <Line type="monotone" dataKey="p90" stroke="#06b6d4" strokeWidth={1} dot={false} strokeDasharray="3 3" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          ) : null}
-        </div>
-        <p className="text-xs text-slate-500 mt-2">
-          Green line = median outcome. Shaded band = 10th to 90th percentile. Assumes independent annual returns
-          (US stocks 7% real ±17%, bonds 2% ±6%). Sequence-of-returns risk and correlation aren't modeled.
-        </p>
-      </section>
     </main>
   );
 }

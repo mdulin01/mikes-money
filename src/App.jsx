@@ -5,6 +5,7 @@ import { ToastProvider } from './components/Toast';
 import LoginScreen from './components/LoginScreen';
 import LoadingScreen from './components/LoadingScreen';
 import Nav from './components/Nav';
+import Footer from './components/Footer';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Holdings from './pages/Holdings';
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/scenarios" element={<Scenarios {...money} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <Footer />
         </div>
       </ToastProvider>
     </BrowserRouter>
