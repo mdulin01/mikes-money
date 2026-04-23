@@ -14,6 +14,7 @@ const DEFAULT_DATA = {
   budgets: {},          // { 'YYYY-MM': { categoryId: amount } }
   scenarios: [],        // user-defined forecasts
   manualAccounts: [],   // accounts not on Plaid (home value, 529s, crypto wallets)
+  manualHoldings: [],   // positions entered by hand (TIAA, 401k, accounts Plaid can't reach)
   preferences: {
     emergencyMonths: 6,
     targetSavingsRate: 0.25,
@@ -145,6 +146,21 @@ export function useMoneyData(user) {
     return updateConfig({ manualAccounts: next });
   }, [data, updateConfig]);
 
+  const addManualHolding = useCallback((h) => {
+    const next = [...(data?.manualHoldings || []), { id: crypto.randomUUID(), ...h }];
+    return updateConfig({ manualHoldings: next });
+  }, [data, updateConfig]);
+
+  const updateManualHolding = useCallback((id, patch) => {
+    const next = (data?.manualHoldings || []).map(h => h.id === id ? { ...h, ...patch } : h);
+    return updateConfig({ manualHoldings: next });
+  }, [data, updateConfig]);
+
+  const deleteManualHolding = useCallback((id) => {
+    const next = (data?.manualHoldings || []).filter(h => h.id !== id);
+    return updateConfig({ manualHoldings: next });
+  }, [data, updateConfig]);
+
   const categorizeTransaction = useCallback((txnId, category) => {
     const ref = doc(db, COLLECTIONS.TRANSACTIONS, txnId);
     return updateDoc(ref, { category, categorizedBy: 'user' });
@@ -171,9 +187,16 @@ export function useMoneyData(user) {
       .reduce((sum, t) => sum + t.amount, 0);
   }, [recentTxns]);
 
+  // Merge Plaid-synced + manually-entered holdings. Manual ones get a `manual: true` flag
+  // and use negative ids-to-manual-array-id mapping so UI can distinguish.
+  const allHoldings = useMemo(() => {
+    const manual = (data?.manualHoldings || []).map(h => ({ ...h, manual: true }));
+    return [...holdings, ...manual];
+  }, [holdings, data]);
+
   const investmentsTotal = useMemo(
-    () => holdings.reduce((s, h) => s + (h.institutionValue || 0), 0),
-    [holdings],
+    () => allHoldings.reduce((s, h) => s + (h.institutionValue || 0), 0),
+    [allHoldings],
   );
 
   return {
@@ -181,7 +204,8 @@ export function useMoneyData(user) {
     loading,
     accounts,
     recentTxns,
-    holdings,
+    holdings: allHoldings,
+    plaidHoldings: holdings,
     liabilities,
     netWorthHistory,
     netWorth,
@@ -196,6 +220,9 @@ export function useMoneyData(user) {
     addManualAccount,
     updateManualAccount,
     deleteManualAccount,
+    addManualHolding,
+    updateManualHolding,
+    deleteManualHolding,
     categorizeTransaction,
   };
 }
