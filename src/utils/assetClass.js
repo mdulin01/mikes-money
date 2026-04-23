@@ -22,24 +22,27 @@ const TICKER_MAP = {
   // US Total/Broad Market
   VTI: 'us_stock', VOO: 'us_stock', VTSAX: 'us_stock', FSKAX: 'us_stock', SWTSX: 'us_stock',
   SPY: 'us_stock', IVV: 'us_stock', FXAIX: 'us_stock', VFIAX: 'us_stock', ITOT: 'us_stock',
-  SCHB: 'us_stock', SCHX: 'us_stock',
-  // US Sector / Large Cap / Growth / Value
+  SCHB: 'us_stock', SCHX: 'us_stock', SWPPX: 'us_stock',
+  // US Sector / Large Cap / Growth / Value / Small
   QQQ: 'us_stock', VUG: 'us_stock', VTV: 'us_stock', VB: 'us_stock', IJR: 'us_stock',
-  IWM: 'us_stock', IWD: 'us_stock', IWF: 'us_stock', IJH: 'us_stock',
-  DIA: 'us_stock',
-  // International
+  IWM: 'us_stock', IWD: 'us_stock', IWF: 'us_stock', IJH: 'us_stock', DIA: 'us_stock',
+  VITAX: 'us_stock', VLCAX: 'us_stock', SWSSX: 'us_stock', DISSX: 'us_stock',
+  TAN: 'us_stock',  // Solar ETF (thematic US)
+  // International developed + emerging + ESG-global
   VXUS: 'intl_stock', IXUS: 'intl_stock', VTIAX: 'intl_stock', FTIHX: 'intl_stock',
-  VEA: 'intl_stock', IEFA: 'intl_stock', SCHF: 'intl_stock',
-  VWO: 'intl_stock', IEMG: 'intl_stock', EEM: 'intl_stock',
+  VEA: 'intl_stock', IEFA: 'intl_stock', SCHF: 'intl_stock', SWISX: 'intl_stock',
+  VWO: 'intl_stock', IEMG: 'intl_stock', EEM: 'intl_stock', SFENX: 'intl_stock',
+  VESGX: 'intl_stock', VEIGX: 'intl_stock', NZAC: 'intl_stock',
   // US Bond
   BND: 'us_bond', AGG: 'us_bond', VBTLX: 'us_bond', FXNAX: 'us_bond', VCIT: 'us_bond',
   BSV: 'us_bond', BIV: 'us_bond', BLV: 'us_bond', SCHZ: 'us_bond', TLT: 'us_bond',
   IEF: 'us_bond', SHY: 'us_bond', TIPS: 'us_bond', VTIP: 'us_bond', SCHP: 'us_bond',
+  VFIDX: 'us_bond', VGLT: 'us_bond',
   // Intl Bond
-  BNDX: 'intl_bond', IAGG: 'intl_bond',
-  // Real Estate
+  BNDX: 'intl_bond', IAGG: 'intl_bond', VTABX: 'intl_bond',
+  // Real Estate (US + Intl)
   VNQ: 'real_estate', SCHH: 'real_estate', IYR: 'real_estate', REET: 'real_estate',
-  VGSIX: 'real_estate', VGSLX: 'real_estate',
+  VGSIX: 'real_estate', VGSLX: 'real_estate', VNQI: 'real_estate',
   // Alternatives / Commodities
   GLD: 'alternative', IAU: 'alternative', SLV: 'alternative', DBC: 'alternative',
   USO: 'alternative',
@@ -47,6 +50,8 @@ const TICKER_MAP = {
   VMFXX: 'cash', SPAXX: 'cash', FZFXX: 'cash', SPRXX: 'cash', VUSXX: 'cash', FDRXX: 'cash',
   // Crypto (ETF form)
   IBIT: 'crypto', FBTC: 'crypto', GBTC: 'crypto', ETHE: 'crypto', BITO: 'crypto',
+  // TIAA CREF Social Choice is ~60/40 blended — classify as us_stock as rough approximation
+  QSCCFX: 'us_stock',
 };
 
 export function classifyHolding(h) {

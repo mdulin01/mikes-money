@@ -15,11 +15,16 @@ const BLANK_FORM = {
 export default function Holdings({
   holdings, accounts, investmentsTotal,
   addManualHolding, updateManualHolding, deleteManualHolding,
+  data, updateConfig,
 }) {
   const [groupBy, setGroupBy] = useState('account');
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [editingId, setEditingId] = useState(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkPreview, setBulkPreview] = useState(null);
 
   const accountById = useMemo(
     () => Object.fromEntries(accounts.map(a => [a.id, a])),
@@ -127,8 +132,102 @@ export default function Holdings({
           >
             + Add manual
           </button>
+          <button
+            onClick={() => { setBulkOpen(s => !s); setBulkError(null); setBulkPreview(null); }}
+            className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded-lg text-sm"
+          >
+            Bulk import
+          </button>
         </div>
       </header>
+
+      {bulkOpen && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-200">Bulk import (JSON)</h2>
+          <p className="text-xs text-slate-400">
+            Paste a JSON array of holding objects. Each item: {"{ accountName, ticker?, name?, quantity?, institutionPrice?, institutionValue, costBasis?, type? }"}.
+            Only <code className="text-emerald-400">accountName</code> and <code className="text-emerald-400">institutionValue</code> are required.
+            Valid type values: equity, etf, mutual fund, fixed income, cash, cryptocurrency, derivative.
+          </p>
+          <textarea
+            rows={10}
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            placeholder='[{"accountName": "TIAA 403b", "ticker": "VIIIX", "name": "Vanguard Institutional Index", "quantity": 1234.56, "institutionPrice": 456.78, "institutionValue": 563918.97, "type": "mutual fund"}]'
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono"
+          />
+          {bulkError && <p className="text-xs text-rose-400">{bulkError}</p>}
+          {bulkPreview && (
+            <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 text-xs">
+              <div className="text-slate-300 font-semibold mb-2">Preview — {bulkPreview.length} holdings, total {money(bulkPreview.reduce((s, h) => s + (h.institutionValue || 0), 0))}</div>
+              <ul className="space-y-1 max-h-48 overflow-y-auto">
+                {bulkPreview.map((h, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <span className="text-slate-400 w-28 truncate">{h.accountName}</span>
+                    <span className="font-mono text-emerald-300 w-16">{h.ticker || '—'}</span>
+                    <span className="flex-1 truncate text-slate-500">{h.name || '(no name)'}</span>
+                    <span className="mono-nums">{money(h.institutionValue)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setBulkError(null);
+                setBulkPreview(null);
+                try {
+                  const parsed = JSON.parse(bulkText);
+                  if (!Array.isArray(parsed)) throw new Error('Top level must be an array');
+                  const normalized = parsed.map((p, i) => {
+                    if (!p.accountName) throw new Error(`Item ${i}: missing accountName`);
+                    if (p.institutionValue == null) throw new Error(`Item ${i}: missing institutionValue`);
+                    return {
+                      accountName: String(p.accountName),
+                      ticker: p.ticker ? String(p.ticker).toUpperCase() : null,
+                      name: p.name ? String(p.name) : (p.ticker ? String(p.ticker) : 'Untitled'),
+                      quantity: p.quantity != null ? Number(p.quantity) : null,
+                      institutionPrice: p.institutionPrice != null ? Number(p.institutionPrice) : null,
+                      institutionValue: Number(p.institutionValue),
+                      costBasis: p.costBasis != null ? Number(p.costBasis) : null,
+                      type: p.type || 'equity',
+                      currency: 'USD',
+                    };
+                  });
+                  setBulkPreview(normalized);
+                } catch (e) {
+                  setBulkError(e.message);
+                }
+              }}
+              className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg text-sm"
+            >
+              Parse & preview
+            </button>
+            {bulkPreview && (
+              <button
+                onClick={async () => {
+                  const withIds = bulkPreview.map(h => ({ id: crypto.randomUUID(), ...h }));
+                  const next = [...(data?.manualHoldings || []), ...withIds];
+                  await updateConfig({ manualHoldings: next });
+                  setBulkOpen(false);
+                  setBulkText('');
+                  setBulkPreview(null);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm"
+              >
+                Import {bulkPreview.length}
+              </button>
+            )}
+            <button
+              onClick={() => { setBulkOpen(false); setBulkText(''); setBulkError(null); setBulkPreview(null); }}
+              className="text-slate-400 hover:text-slate-200 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {formOpen && (
         <div className="bg-slate-800 border border-emerald-900/50 rounded-xl p-4 space-y-3">

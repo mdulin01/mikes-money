@@ -10,3 +10,4 @@ dist
 functions/node_modules
 functions/lib
 functions/.env
+HOLDINGS_IMPORT.json
