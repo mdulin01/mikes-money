@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { money, signedMoney, pnlClass } from '../utils/format';
+import { money, signedMoney, pnlClass, pct } from '../utils/format';
 import { toLocalMonthStr, monthStart } from '../utils/dateUtils';
 import { ACCOUNT_TYPES } from '../constants';
 import NetWorthChart from '../components/NetWorthChart';
+import { simulate } from '../utils/monteCarlo';
+import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRate } from '../utils/insights';
 
-export default function Dashboard({ data, accounts, recentTxns, netWorth, currentMonthSpend, netWorthHistory }) {
+export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory }) {
   const month = toLocalMonthStr();
 
   // Group accounts by asset side
@@ -34,6 +36,38 @@ export default function Dashboard({ data, accounts, recentTxns, netWorth, curren
   const assets = byType.filter(g => g.side === 'asset').reduce((s, g) => s + g.total, 0);
   const liabilities = byType.filter(g => g.side === 'liability').reduce((s, g) => s + g.total, 0);
 
+  // === Retirement readiness (fast Monte Carlo) ===
+  const readiness = useMemo(() => {
+    const r = data?.retirement;
+    if (!r || !r.annualSpend) return null;
+    const sim = simulate({
+      ...r,
+      startingBalance: r.startingBalance ?? (investmentsTotal || netWorth || 0),
+      runs: 250,  // smaller for dashboard perf
+    });
+    const wRate = withdrawalRate({
+      netWorth, investmentsTotal,
+      annualSpend: r.annualSpend,
+      annualIncome: (r.socialSecurity || 0), // very rough — doesn't include part-time work
+    });
+    return { successRate: sim.successRate, wRate };
+  }, [data?.retirement, investmentsTotal, netWorth]);
+
+  const avgMonthlySpend = useMemo(() => estimatedMonthlySpend(recentTxns), [recentTxns]);
+  const runway = useMemo(
+    () => cashRunwayMonths({ accounts, monthlySpend: avgMonthlySpend }),
+    [accounts, avgMonthlySpend],
+  );
+
+  // === Actionable insights ===
+  const insights = useMemo(
+    () => generateInsights({
+      holdings, accounts, investmentsTotal, netWorth, recentTxns, data,
+      monthlySpend: avgMonthlySpend,
+    }),
+    [holdings, accounts, investmentsTotal, netWorth, recentTxns, data, avgMonthlySpend],
+  );
+
   return (
     <main className="max-w-6xl mx-auto p-4 space-y-6">
       <header>
@@ -48,6 +82,33 @@ export default function Dashboard({ data, accounts, recentTxns, netWorth, curren
         <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
         <Tile label="Savings rate (mo)" value={`${(savingsRate * 100).toFixed(0)}%`} tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'} />
       </section>
+
+      {/* Retirement readiness + runway */}
+      {readiness && (
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Tile
+            label="Retirement success"
+            value={pct(readiness.successRate, 0)}
+            tone={readiness.successRate >= 0.9 ? 'text-emerald-400' : readiness.successRate >= 0.75 ? 'text-amber-400' : 'text-rose-400'}
+            hint={`Monte Carlo survival probability to age ${data?.retirement?.endAge || 90}`}
+          />
+          <Tile
+            label="Withdrawal rate"
+            value={readiness.wRate ? pct(readiness.wRate, 1) : '—'}
+            tone={(readiness.wRate || 0) < 0.04 ? 'text-emerald-400' : (readiness.wRate || 0) < 0.05 ? 'text-amber-400' : 'text-rose-400'}
+            hint="Annual portfolio draw as % of investable assets"
+          />
+          <Tile
+            label="Cash runway"
+            value={runway ? `${runway.toFixed(1)} mo` : '—'}
+            tone={runway ? (runway >= (data?.preferences?.emergencyMonths || 6) ? 'text-emerald-400' : 'text-amber-400') : 'text-slate-400'}
+            hint={avgMonthlySpend ? `At ${money(avgMonthlySpend)} avg monthly spend` : 'Need transaction history'}
+          />
+        </section>
+      )}
+
+      {/* This month's action items */}
+      <ThisMonthCard insights={insights} />
 
       {/* Net worth history */}
       <NetWorthChart history={netWorthHistory} currentNetWorth={netWorth} />
@@ -96,12 +157,53 @@ export default function Dashboard({ data, accounts, recentTxns, netWorth, curren
   );
 }
 
-function Tile({ label, value, big, tone = 'text-slate-100' }) {
+function Tile({ label, value, big, tone = 'text-slate-100', hint }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
       <div className="text-xs text-slate-400 uppercase tracking-wide">{label}</div>
       <div className={`${big ? 'text-3xl md:text-4xl' : 'text-2xl'} font-bold mono-nums mt-1 ${tone}`}>{value}</div>
+      {hint && <div className="text-[11px] text-slate-500 mt-1">{hint}</div>}
     </div>
+  );
+}
+
+function ThisMonthCard({ insights }) {
+  const headline = insights[0];
+  const rest = insights.slice(1, 4);
+  const toneClass = {
+    warn: 'border-amber-900/50 text-amber-300',
+    info: 'border-sky-900/50 text-sky-300',
+    good: 'border-emerald-900/50 text-emerald-300',
+  }[headline.severity];
+  const icon = { warn: '!', info: 'i', good: '✓' }[headline.severity];
+
+  return (
+    <section className={`bg-slate-800 border ${toneClass.split(' ')[0]} rounded-xl p-4`}>
+      <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">This month</div>
+      <div className="flex items-start gap-3">
+        <span className={`text-xl font-bold ${toneClass.split(' ')[1]}`}>{icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-semibold text-slate-100">{headline.title}</div>
+          {headline.body && <div className="text-sm text-slate-400 mt-0.5">{headline.body}</div>}
+          {headline.action && <div className="text-sm text-slate-300 mt-1">→ {headline.action}</div>}
+        </div>
+      </div>
+      {rest.length > 0 && (
+        <ul className="mt-3 pt-3 border-t border-slate-700/60 space-y-2 text-sm">
+          {rest.map((r, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className={`text-xs mt-0.5 ${r.severity === 'warn' ? 'text-amber-400' : r.severity === 'info' ? 'text-sky-400' : 'text-emerald-400'}`}>
+                {r.severity === 'warn' ? '!' : r.severity === 'info' ? 'i' : '✓'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <span className="text-slate-200">{r.title}</span>
+                {r.action && <span className="text-slate-500"> — {r.action}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

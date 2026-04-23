@@ -29,15 +29,17 @@ function sampleReturn(stockPct) {
  * @param {object} params
  * @param {number} params.startAge
  * @param {number} params.retireAge
- * @param {number} params.endAge               usually 95
- * @param {number} params.startingBalance      today's investable assets
- * @param {number} params.annualContribution   while working (real dollars)
- * @param {number} params.annualSpend          in retirement (real dollars)
- * @param {number} params.stockPct             0-1
- * @param {number} params.socialSecurity       starts at ssStartAge
+ * @param {number} params.endAge                 usually 95
+ * @param {number} params.startingBalance        today's investable assets
+ * @param {number} params.annualContribution     while working (real dollars)
+ * @param {number} params.contributionGrowthRate per-year real growth on contribution (e.g. 0.005 = +0.5%/yr)
+ * @param {number} params.annualSpend            in retirement (real dollars)
+ * @param {number} params.spendGrowthRate        per-year real change (e.g. -0.005 shrinks spending 0.5%/yr)
+ * @param {number} params.stockPct               0-1
+ * @param {number} params.socialSecurity         annual, real
  * @param {number} params.ssStartAge
+ * @param {Array}  params.lumpSums               [{age, amount}] one-time income events (e.g. inheritance)
  * @param {number} params.runs
- * @returns {{paths: number[][], ages: number[], successRate: number, percentiles: {p10:number[], p50:number[], p90:number[]}, medianEndBalance: number}}
  */
 export function simulate({
   startAge = 40,
@@ -45,16 +47,26 @@ export function simulate({
   endAge = 95,
   startingBalance = 0,
   annualContribution = 0,
+  contributionGrowthRate = 0,
   annualSpend = 0,
+  spendGrowthRate = 0,
   stockPct = 0.7,
   socialSecurity = 0,
   ssStartAge = 67,
+  lumpSums = [],
   runs = 1000,
 }) {
   const years = endAge - startAge + 1;
   const ages = Array.from({ length: years }, (_, i) => startAge + i);
   const paths = [];
   let successes = 0;
+
+  // Index lump-sum events by age
+  const lumpByAge = {};
+  for (const l of lumpSums) {
+    if (!l?.age || !l?.amount) continue;
+    lumpByAge[l.age] = (lumpByAge[l.age] || 0) + Number(l.amount);
+  }
 
   for (let r = 0; r < runs; r++) {
     let bal = startingBalance;
@@ -67,11 +79,18 @@ export function simulate({
       bal = bal * (1 + ret);
 
       if (age < retireAge) {
-        bal += annualContribution;
+        const yearsContributing = i;
+        const contrib = annualContribution * Math.pow(1 + contributionGrowthRate, yearsContributing);
+        bal += contrib;
       } else {
+        const yearsRetired = age - retireAge;
         const ss = age >= ssStartAge ? socialSecurity : 0;
-        bal -= Math.max(0, annualSpend - ss);
+        const spend = annualSpend * Math.pow(1 + spendGrowthRate, yearsRetired);
+        bal -= Math.max(0, spend - ss);
       }
+
+      // Apply one-time events (inheritance, windfall, etc.)
+      if (lumpByAge[age]) bal += lumpByAge[age];
 
       if (bal <= 0) {
         bal = 0;

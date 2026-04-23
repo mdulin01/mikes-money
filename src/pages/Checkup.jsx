@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { money, pct } from '../utils/format';
 import { classifyHolding, ASSET_CLASSES } from '../utils/assetClass';
+import { computeSectorTotals } from '../utils/sectorMap';
 
 // Expense ratios for common tickers (annual %). Source: fund prospectuses.
 // Extend this list as needed — missing tickers show as "unknown".
@@ -125,10 +126,22 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
       }));
   }, [holdings]);
 
+  // --- Sector concentration (stock side only) ---
+  const sectorAnalysis = useMemo(() => {
+    const { totals, totalStock, diversifiedStock } = computeSectorTotals(holdings, classifyHolding);
+    if (!totalStock) return null;
+    const rows = Object.entries(totals)
+      .map(([sector, value]) => ({ sector, value, pct: value / totalStock }))
+      .sort((a, b) => b.value - a.value);
+    const hot = rows.filter(r => r.pct > 0.30);
+    return { rows, hot, totalStock, diversifiedStock, diversifiedPct: diversifiedStock / totalStock };
+  }, [holdings]);
+
   // --- Summary score ---
   const checks = [
     idleCash && { ok: idleCash.excess <= Math.max(10000, monthlySpend), label: 'Emergency cash buffer' },
     { ok: concentrations.length === 0, label: 'Single-stock concentration' },
+    sectorAnalysis && { ok: sectorAnalysis.hot.length === 0, label: 'Sector concentration' },
     { ok: feeAnalysis.weightedAvg < 0.005, label: 'Expense ratios under 0.5%' },
     { ok: overlaps.length <= 1, label: 'Fund overlap minimal' },
   ].filter(Boolean);
@@ -186,6 +199,46 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
           </ul>
         )}
       </Card>
+
+      {/* Sector concentration */}
+      {sectorAnalysis && (
+        <Card title="Sector concentration (stock side)" good={sectorAnalysis.hot.length === 0}>
+          {sectorAnalysis.hot.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              No single sector exceeds 30% of your stock allocation. Reasonably diversified.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-amber-300">
+                {sectorAnalysis.hot.map(h => `${h.sector} ${pct(h.pct, 0)}`).join(', ')} — heavily concentrated.
+                Often driven by a single sector ETF (e.g. VITAX for Tech). Diversify or offset with other sectors.
+              </p>
+              <ul className="mt-3 divide-y divide-slate-700/40 text-sm">
+                {sectorAnalysis.rows.map(r => (
+                  <li key={r.sector} className="py-1.5 flex items-center">
+                    <span className="flex-1 text-slate-300">{r.sector}</span>
+                    <span className="mono-nums text-slate-400 w-20 text-right">{money(r.value)}</span>
+                    <span className={`mono-nums w-16 text-right ${r.pct > 0.30 ? 'text-amber-300' : 'text-slate-400'}`}>
+                      {pct(r.pct, 0)}
+                    </span>
+                  </li>
+                ))}
+                {sectorAnalysis.diversifiedStock > 0 && (
+                  <li className="py-1.5 flex items-center text-slate-500 italic">
+                    <span className="flex-1">Diversified / broad funds (no sector tag)</span>
+                    <span className="mono-nums w-20 text-right">{money(sectorAnalysis.diversifiedStock)}</span>
+                    <span className="mono-nums w-16 text-right">{pct(sectorAnalysis.diversifiedPct, 0)}</span>
+                  </li>
+                )}
+              </ul>
+            </>
+          )}
+          <p className="text-xs text-slate-500 mt-2">
+            Percentages are of total stock-side holdings. Broad index funds (VTI, VOO, etc.) are shown as
+            "Diversified" since they span all sectors. Sector-specific funds are the ones that add concentration.
+          </p>
+        </Card>
+      )}
 
       {/* Fees */}
       <Card title="Fund expense ratios" good={feeAnalysis.weightedAvg < 0.005}>

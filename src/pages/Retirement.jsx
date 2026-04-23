@@ -3,15 +3,20 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveCont
 import { money, pct } from '../utils/format';
 import { simulate } from '../utils/monteCarlo';
 
+// Defaults tuned to match Empower's retirement planner inputs so you can cross-check.
+// Override in the UI or save your own via "Save inputs".
 const DEFAULTS = {
-  startAge: 45,
-  retireAge: 65,
-  endAge: 95,
-  annualContribution: 40000,
-  annualSpend: 120000,
+  startAge: 50,
+  retireAge: 60,
+  endAge: 90,
+  annualContribution: 125000,
+  contributionGrowthRate: 0.005,
+  annualSpend: 150000,
+  spendGrowthRate: -0.005,
   stockPct: 0.7,
-  socialSecurity: 30000,
-  ssStartAge: 67,
+  socialSecurity: 34632,
+  ssStartAge: 63,
+  lumpSums: [{ age: 67, amount: 2000000, label: 'Inheritance' }],
   runs: 1000,
 };
 
@@ -27,6 +32,7 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
   }));
 
   const [result, setResult] = useState(null);
+  const [stressResult, setStressResult] = useState(null);
   const [computing, setComputing] = useState(false);
 
   const run = () => {
@@ -38,6 +44,15 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
     }, 20);
   };
 
+  const runStressTest = () => {
+    // Simulate an immediate 20% drawdown (sequence-of-returns shock at retirement)
+    const stressed = simulate({
+      ...inputs,
+      startingBalance: inputs.startingBalance * 0.8,
+    });
+    setStressResult(stressed);
+  };
+
   // Auto-run on mount + when inputs change (debounced via effect)
   useEffect(() => {
     const t = setTimeout(run, 150);
@@ -45,9 +60,24 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     inputs.startAge, inputs.retireAge, inputs.endAge, inputs.startingBalance,
-    inputs.annualContribution, inputs.annualSpend, inputs.stockPct,
-    inputs.socialSecurity, inputs.ssStartAge, inputs.runs,
+    inputs.annualContribution, inputs.contributionGrowthRate,
+    inputs.annualSpend, inputs.spendGrowthRate,
+    inputs.stockPct, inputs.socialSecurity, inputs.ssStartAge,
+    JSON.stringify(inputs.lumpSums || []), inputs.runs,
   ]);
+
+  const addLumpSum = () => setInputs(s => ({
+    ...s,
+    lumpSums: [...(s.lumpSums || []), { age: 67, amount: 0, label: 'Event' }],
+  }));
+  const updateLumpSum = (i, patch) => setInputs(s => ({
+    ...s,
+    lumpSums: (s.lumpSums || []).map((l, idx) => idx === i ? { ...l, ...patch } : l),
+  }));
+  const removeLumpSum = (i) => setInputs(s => ({
+    ...s,
+    lumpSums: (s.lumpSums || []).filter((_, idx) => idx !== i),
+  }));
 
   const setField = (k) => (v) => setInputs(s => ({ ...s, [k]: v }));
 
@@ -83,8 +113,51 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
             Monte Carlo simulation · {inputs.runs.toLocaleString()} runs · real dollars
           </p>
         </div>
-        <button onClick={save} className="text-xs text-slate-400 hover:text-slate-200">Save inputs</button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={runStressTest}
+            className="text-xs bg-amber-900/40 hover:bg-amber-900/60 text-amber-200 border border-amber-900/60 px-3 py-1.5 rounded-lg"
+            title="Simulate an immediate 20% market drop"
+          >
+            Stress test: -20%
+          </button>
+          <button onClick={save} className="text-xs text-slate-400 hover:text-slate-200">Save inputs</button>
+        </div>
       </header>
+
+      {stressResult && result && (
+        <section className="bg-amber-950/30 border border-amber-900/50 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-amber-200">Stress test — immediate 20% market drop</h2>
+            <button onClick={() => setStressResult(null)} className="text-xs text-slate-400 hover:text-slate-200">Dismiss</button>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Success rate</div>
+              <div className="text-xl font-bold mono-nums mt-0.5">
+                <span className="text-slate-400">{pct(result.successRate, 0)}</span>
+                <span className="text-slate-500 mx-1">→</span>
+                <span className={stressResult.successRate >= 0.8 ? 'text-emerald-400' : stressResult.successRate >= 0.6 ? 'text-amber-300' : 'text-rose-400'}>
+                  {pct(stressResult.successRate, 0)}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Median ending</div>
+              <div className="text-xl font-bold mono-nums mt-0.5">{money(stressResult.medianEndBalance)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">p10 ending</div>
+              <div className="text-xl font-bold mono-nums mt-0.5 text-rose-400">{money(stressResult.p10EndBalance)}</div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">
+            Reruns the simulation with starting portfolio cut by 20% — approximates the classic "retire into a bad market"
+            scenario. If this number is much lower than the base case, sequence-of-returns risk is your binding constraint.
+            The fix is a larger cash buffer, not higher returns.
+          </p>
+        </section>
+      )}
 
       {/* Headline */}
       {result && (
@@ -119,8 +192,14 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           <Field label="Annual contribution">
             <input type="number" value={inputs.annualContribution} onChange={(e) => setField('annualContribution')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
           </Field>
+          <Field label={`Contribution growth (${((inputs.contributionGrowthRate || 0) * 100).toFixed(1)}%/yr)`}>
+            <input type="number" step="0.001" value={inputs.contributionGrowthRate || 0} onChange={(e) => setField('contributionGrowthRate')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
           <Field label="Annual spend (retirement)">
             <input type="number" value={inputs.annualSpend} onChange={(e) => setField('annualSpend')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label={`Spend growth (${((inputs.spendGrowthRate || 0) * 100).toFixed(1)}%/yr)`}>
+            <input type="number" step="0.001" value={inputs.spendGrowthRate || 0} onChange={(e) => setField('spendGrowthRate')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
           </Field>
           <Field label={`Stock / bond mix (${Math.round(inputs.stockPct * 100)}% / ${Math.round((1 - inputs.stockPct) * 100)}%)`}>
             <input type="range" min="0" max="1" step="0.05" value={inputs.stockPct} onChange={(e) => setField('stockPct')(Number(e.target.value))} className="w-full" />
@@ -128,6 +207,45 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           <Field label="Social Security ($/yr)">
             <input type="number" value={inputs.socialSecurity} onChange={(e) => setField('socialSecurity')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
           </Field>
+          <Field label="SS start age">
+            <input type="number" value={inputs.ssStartAge} onChange={(e) => setField('ssStartAge')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+        </div>
+
+        {/* Lump-sum income events */}
+        <div className="mt-4 pt-3 border-t border-slate-700/60">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">One-time income events</h3>
+            <button onClick={addLumpSum} className="text-xs text-emerald-400 hover:text-emerald-300">+ Add event</button>
+          </div>
+          {(inputs.lumpSums || []).length === 0 && (
+            <p className="text-xs text-slate-500">No events (e.g. inheritance, home sale, severance). Click "+ Add event".</p>
+          )}
+          <ul className="space-y-2">
+            {(inputs.lumpSums || []).map((l, i) => (
+              <li key={i} className="grid grid-cols-12 gap-2 items-center text-sm">
+                <input
+                  value={l.label || ''}
+                  onChange={(e) => updateLumpSum(i, { label: e.target.value })}
+                  placeholder="Label"
+                  className="col-span-4 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1"
+                />
+                <div className="col-span-3">
+                  <input type="number" value={l.age || ''}
+                    onChange={(e) => updateLumpSum(i, { age: Number(e.target.value) })}
+                    placeholder="Age"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" />
+                </div>
+                <div className="col-span-4">
+                  <input type="number" value={l.amount || ''}
+                    onChange={(e) => updateLumpSum(i, { amount: Number(e.target.value) })}
+                    placeholder="Amount (after tax)"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" />
+                </div>
+                <button onClick={() => removeLumpSum(i)} className="col-span-1 text-slate-500 hover:text-rose-400 text-xs">✕</button>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
