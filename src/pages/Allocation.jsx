@@ -1,13 +1,66 @@
 import { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
 import { money, pct } from '../utils/format';
 import { ASSET_CLASSES, classifyHolding, allocateHoldings, targetAllocation } from '../utils/assetClass';
+import { simulate } from '../utils/monteCarlo';
+import { computeAge } from '../utils/dateUtils';
+import { USER_PROFILE } from '../constants';
 
-export default function Allocation({ holdings, investmentsTotal, data }) {
+const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
+
+// Preset allocation scenarios (stock / bond split)
+const PRESETS = [
+  { id: 'aggressive',   label: 'Aggressive',   stockPct: 0.90, bondPct: 0.10, description: '90/10 — max growth, max volatility' },
+  { id: 'growth',       label: 'Growth',       stockPct: 0.80, bondPct: 0.20, description: '80/20 — typical pre-retirement' },
+  { id: 'moderate',     label: 'Moderate',     stockPct: 0.70, bondPct: 0.30, description: '70/30 — near-retirement default' },
+  { id: 'balanced',     label: 'Balanced',     stockPct: 0.60, bondPct: 0.40, description: '60/40 — classic split' },
+  { id: 'conservative', label: 'Conservative', stockPct: 0.50, bondPct: 0.50, description: '50/50 — income-forward' },
+  { id: 'defensive',    label: 'Defensive',    stockPct: 0.40, bondPct: 0.60, description: '40/60 — late retirement' },
+];
+
+export default function Allocation({ holdings, investmentsTotal, data, netWorth }) {
   const [yearsToRetirement, setYears] = useState(() => data?.preferences?.yearsToRetirement || 20);
 
   const allocation = useMemo(() => allocateHoldings(holdings), [holdings]);
   const target = useMemo(() => targetAllocation(yearsToRetirement), [yearsToRetirement]);
+
+  // Current actual stock% — exclude cash, treat real_estate + alternative + crypto as equity-like
+  const currentStockPct = useMemo(() => {
+    const equity = allocation
+      .filter(a => ['us_stock', 'intl_stock', 'real_estate', 'alternative', 'crypto'].includes(a.id))
+      .reduce((s, a) => s + a.value, 0);
+    const bonds = allocation
+      .filter(a => ['us_bond', 'intl_bond'].includes(a.id))
+      .reduce((s, a) => s + a.value, 0);
+    const denom = equity + bonds;
+    return denom > 0 ? equity / denom : 0.7;
+  }, [allocation]);
+
+  // Monte Carlo across allocations using user's saved retirement inputs
+  const scenarios = useMemo(() => {
+    const r = data?.retirement;
+    if (!r || !r.annualSpend) return null;
+    const base = {
+      ...r,
+      startAge: CURRENT_AGE,
+      startingBalance: r.startingBalance ?? (investmentsTotal || netWorth || 0),
+      runs: 400,  // moderate — multiple sims on this page
+    };
+    const cases = [
+      { id: 'current', label: 'Current', stockPct: currentStockPct, description: `${(currentStockPct * 100).toFixed(0)}/${((1 - currentStockPct) * 100).toFixed(0)} — what you actually hold today` },
+      ...PRESETS,
+    ];
+    return cases.map(c => {
+      const result = simulate({ ...base, stockPct: c.stockPct });
+      return {
+        ...c,
+        successRate: result.successRate,
+        medianEnd: result.medianEndBalance,
+        p10End: result.p10EndBalance,
+        p90End: result.p90EndBalance,
+      };
+    });
+  }, [data?.retirement, investmentsTotal, netWorth, currentStockPct]);
 
   // Concentration: any single security > 10% of total
   const concentrations = useMemo(() => {
@@ -150,6 +203,107 @@ export default function Allocation({ holdings, investmentsTotal, data }) {
               ))}
             </ul>
           </section>
+
+          {/* Monte Carlo across allocation scenarios */}
+          {scenarios ? (
+            <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-slate-300">Allocation impact on retirement outcome</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Each scenario runs {400} Monte Carlo simulations using your saved retirement plan (age {CURRENT_AGE} → {data.retirement?.endAge || 90}, spend {money(data.retirement?.annualSpend || 0)}/yr, SS at {data.retirement?.ssStartAge || 63}).
+                  Only the stock / bond split changes.
+                </p>
+              </div>
+
+              {/* Bar chart of success rates */}
+              <div className="h-56 mb-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={scenarios} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                    <XAxis dataKey="label" stroke="#94a3b8" style={{ fontSize: 11 }} angle={-15} textAnchor="end" height={50} />
+                    <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+                    <Tooltip
+                      formatter={(v, _k, item) => [pct(v, 0), 'Success rate']}
+                      labelFormatter={(l) => `${l} (${Math.round((scenarios.find(s => s.label === l)?.stockPct || 0) * 100)}/${Math.round((1 - (scenarios.find(s => s.label === l)?.stockPct || 0)) * 100)})`}
+                      contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                    />
+                    <Bar dataKey="successRate">
+                      {scenarios.map((s, i) => (
+                        <Cell key={i}
+                          fill={s.id === 'current' ? '#f59e0b' : s.successRate >= 0.9 ? '#10b981' : s.successRate >= 0.75 ? '#3b82f6' : '#ef4444'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Table with detail */}
+              <ul className="divide-y divide-slate-700/60 text-sm">
+                <li className="py-2 flex items-center text-xs text-slate-500 uppercase tracking-wide">
+                  <span className="flex-1">Scenario</span>
+                  <span className="w-16 text-right">Stocks</span>
+                  <span className="w-20 text-right">Success</span>
+                  <span className="w-24 text-right">Median</span>
+                  <span className="w-24 text-right">p10 (bad)</span>
+                  <span className="w-24 text-right">p90 (good)</span>
+                </li>
+                {scenarios.map(s => {
+                  const isCurrent = s.id === 'current';
+                  return (
+                    <li key={s.id} className={`py-2 flex items-center ${isCurrent ? 'bg-amber-950/20 -mx-4 px-4 rounded' : ''}`}>
+                      <span className="flex-1">
+                        <span className="text-slate-200">{s.label}</span>
+                        {isCurrent && <span className="text-[10px] ml-2 px-1.5 py-0.5 bg-amber-900/50 text-amber-300 rounded">you</span>}
+                        <div className="text-[11px] text-slate-500">{s.description}</div>
+                      </span>
+                      <span className="mono-nums w-16 text-right text-slate-400">{Math.round(s.stockPct * 100)}%</span>
+                      <span className={`mono-nums w-20 text-right font-medium ${s.successRate >= 0.9 ? 'text-emerald-400' : s.successRate >= 0.75 ? 'text-amber-300' : 'text-rose-400'}`}>
+                        {pct(s.successRate, 0)}
+                      </span>
+                      <span className="mono-nums w-24 text-right">{money(s.medianEnd)}</span>
+                      <span className="mono-nums w-24 text-right text-rose-400">{money(s.p10End)}</span>
+                      <span className="mono-nums w-24 text-right text-emerald-400">{money(s.p90End)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {/* Takeaway */}
+              <div className="mt-3 pt-3 border-t border-slate-700/60 text-xs text-slate-400 space-y-1">
+                {(() => {
+                  const current = scenarios.find(s => s.id === 'current');
+                  const best = [...scenarios].filter(s => s.id !== 'current').sort((a, b) => b.successRate - a.successRate)[0];
+                  const safest = [...scenarios].sort((a, b) => a.p10End - b.p10End).at(-1);
+                  if (!current || !best) return null;
+                  return (
+                    <>
+                      <p>
+                        <span className="text-amber-400">Your current {Math.round(current.stockPct * 100)}/{Math.round((1 - current.stockPct) * 100)} portfolio</span>:
+                        success rate {pct(current.successRate, 0)}, median {money(current.medianEnd)}, p10 {money(current.p10End)}.
+                      </p>
+                      <p>
+                        <span className="text-emerald-400">Highest success rate</span>: {best.label} ({Math.round(best.stockPct * 100)}/{Math.round((1 - best.stockPct) * 100)}) at {pct(best.successRate, 0)}.
+                      </p>
+                      <p>
+                        <span className="text-sky-400">Best downside protection (highest p10)</span>: {safest.label} ({Math.round(safest.stockPct * 100)}/{Math.round((1 - safest.stockPct) * 100)}) — p10 of {money(safest.p10End)}.
+                      </p>
+                      <p className="text-slate-500 pt-1">
+                        Rule of thumb: higher stock % → higher expected return but wider p10-p90 spread (more luck-dependent).
+                        Lower stock % → lower variance but may fail to outrun withdrawals.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </section>
+          ) : (
+            <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+              <p className="text-sm text-slate-400">
+                Save your retirement inputs on the Retire tab to see how different allocations would have affected
+                your Monte Carlo success rate.
+              </p>
+            </section>
+          )}
         </>
       )}
     </main>
