@@ -1,5 +1,20 @@
 import { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, ReferenceLine, LabelList } from 'recharts';
+
+// Shared chart theming
+const CHART_BG = '#0f172a';
+const GRID_STROKE = '#1e293b';
+const AXIS_COLOR = '#94a3b8';
+const TOOLTIP_STYLE = {
+  background: '#0f172a',
+  border: '1px solid #334155',
+  borderRadius: 8,
+  padding: '8px 12px',
+  color: '#e2e8f0',
+  fontSize: 12,
+};
+const TOOLTIP_ITEM = { color: '#e2e8f0', padding: 0 };
+const TOOLTIP_LABEL = { color: '#94a3b8', marginBottom: 4, fontSize: 11 };
 import { money, pct } from '../utils/format';
 import { ASSET_CLASSES, classifyHolding, allocateHoldings, targetAllocation } from '../utils/assetClass';
 import { simulate } from '../utils/monteCarlo';
@@ -36,6 +51,9 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
     return denom > 0 ? equity / denom : 0.7;
   }, [allocation]);
 
+  // Local state for the interactive fan chart
+  const [selectedId, setSelectedId] = useState('current');
+
   // Monte Carlo across allocations using user's saved retirement inputs
   const scenarios = useMemo(() => {
     const r = data?.retirement;
@@ -44,7 +62,7 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
       ...r,
       startAge: CURRENT_AGE,
       startingBalance: r.startingBalance ?? (investmentsTotal || netWorth || 0),
-      runs: 400,  // moderate — multiple sims on this page
+      runs: 500,
     };
     const cases = [
       { id: 'current', label: 'Current', stockPct: currentStockPct, description: `${(currentStockPct * 100).toFixed(0)}/${((1 - currentStockPct) * 100).toFixed(0)} — what you actually hold today` },
@@ -54,6 +72,8 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
       const result = simulate({ ...base, stockPct: c.stockPct });
       return {
         ...c,
+        ages: result.ages,
+        percentiles: result.percentiles,
         successRate: result.successRate,
         medianEnd: result.medianEndBalance,
         p10End: result.p10EndBalance,
@@ -206,96 +226,13 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
 
           {/* Monte Carlo across allocation scenarios */}
           {scenarios ? (
-            <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <div className="mb-3">
-                <h2 className="text-sm font-semibold text-slate-300">Allocation impact on retirement outcome</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Each scenario runs {400} Monte Carlo simulations using your saved retirement plan (age {CURRENT_AGE} → {data.retirement?.endAge || 90}, spend {money(data.retirement?.annualSpend || 0)}/yr, SS at {data.retirement?.ssStartAge || 63}).
-                  Only the stock / bond split changes.
-                </p>
-              </div>
-
-              {/* Bar chart of success rates */}
-              <div className="h-56 mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={scenarios} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                    <XAxis dataKey="label" stroke="#94a3b8" style={{ fontSize: 11 }} angle={-15} textAnchor="end" height={50} />
-                    <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
-                    <Tooltip
-                      formatter={(v, _k, item) => [pct(v, 0), 'Success rate']}
-                      labelFormatter={(l) => `${l} (${Math.round((scenarios.find(s => s.label === l)?.stockPct || 0) * 100)}/${Math.round((1 - (scenarios.find(s => s.label === l)?.stockPct || 0)) * 100)})`}
-                      contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-                    />
-                    <Bar dataKey="successRate">
-                      {scenarios.map((s, i) => (
-                        <Cell key={i}
-                          fill={s.id === 'current' ? '#f59e0b' : s.successRate >= 0.9 ? '#10b981' : s.successRate >= 0.75 ? '#3b82f6' : '#ef4444'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Table with detail */}
-              <ul className="divide-y divide-slate-700/60 text-sm">
-                <li className="py-2 flex items-center text-xs text-slate-500 uppercase tracking-wide">
-                  <span className="flex-1">Scenario</span>
-                  <span className="w-16 text-right">Stocks</span>
-                  <span className="w-20 text-right">Success</span>
-                  <span className="w-24 text-right">Median</span>
-                  <span className="w-24 text-right">p10 (bad)</span>
-                  <span className="w-24 text-right">p90 (good)</span>
-                </li>
-                {scenarios.map(s => {
-                  const isCurrent = s.id === 'current';
-                  return (
-                    <li key={s.id} className={`py-2 flex items-center ${isCurrent ? 'bg-amber-950/20 -mx-4 px-4 rounded' : ''}`}>
-                      <span className="flex-1">
-                        <span className="text-slate-200">{s.label}</span>
-                        {isCurrent && <span className="text-[10px] ml-2 px-1.5 py-0.5 bg-amber-900/50 text-amber-300 rounded">you</span>}
-                        <div className="text-[11px] text-slate-500">{s.description}</div>
-                      </span>
-                      <span className="mono-nums w-16 text-right text-slate-400">{Math.round(s.stockPct * 100)}%</span>
-                      <span className={`mono-nums w-20 text-right font-medium ${s.successRate >= 0.9 ? 'text-emerald-400' : s.successRate >= 0.75 ? 'text-amber-300' : 'text-rose-400'}`}>
-                        {pct(s.successRate, 0)}
-                      </span>
-                      <span className="mono-nums w-24 text-right">{money(s.medianEnd)}</span>
-                      <span className="mono-nums w-24 text-right text-rose-400">{money(s.p10End)}</span>
-                      <span className="mono-nums w-24 text-right text-emerald-400">{money(s.p90End)}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {/* Takeaway */}
-              <div className="mt-3 pt-3 border-t border-slate-700/60 text-xs text-slate-400 space-y-1">
-                {(() => {
-                  const current = scenarios.find(s => s.id === 'current');
-                  const best = [...scenarios].filter(s => s.id !== 'current').sort((a, b) => b.successRate - a.successRate)[0];
-                  const safest = [...scenarios].sort((a, b) => a.p10End - b.p10End).at(-1);
-                  if (!current || !best) return null;
-                  return (
-                    <>
-                      <p>
-                        <span className="text-amber-400">Your current {Math.round(current.stockPct * 100)}/{Math.round((1 - current.stockPct) * 100)} portfolio</span>:
-                        success rate {pct(current.successRate, 0)}, median {money(current.medianEnd)}, p10 {money(current.p10End)}.
-                      </p>
-                      <p>
-                        <span className="text-emerald-400">Highest success rate</span>: {best.label} ({Math.round(best.stockPct * 100)}/{Math.round((1 - best.stockPct) * 100)}) at {pct(best.successRate, 0)}.
-                      </p>
-                      <p>
-                        <span className="text-sky-400">Best downside protection (highest p10)</span>: {safest.label} ({Math.round(safest.stockPct * 100)}/{Math.round((1 - safest.stockPct) * 100)}) — p10 of {money(safest.p10End)}.
-                      </p>
-                      <p className="text-slate-500 pt-1">
-                        Rule of thumb: higher stock % → higher expected return but wider p10-p90 spread (more luck-dependent).
-                        Lower stock % → lower variance but may fail to outrun withdrawals.
-                      </p>
-                    </>
-                  );
-                })()}
-              </div>
-            </section>
+            <AllocationScenarios
+              scenarios={scenarios}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              retirementInputs={data.retirement}
+              currentAge={CURRENT_AGE}
+            />
           ) : (
             <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
               <p className="text-sm text-slate-400">
@@ -307,5 +244,255 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
         </>
       )}
     </main>
+  );
+}
+
+/* -------------------- AllocationScenarios (interactive) -------------------- */
+
+function AllocationScenarios({ scenarios, selectedId, setSelectedId, retirementInputs, currentAge }) {
+  const selected = scenarios.find(s => s.id === selectedId) || scenarios[0];
+  const endAge = retirementInputs?.endAge || 90;
+
+  // Fan chart data for selected scenario
+  const fanData = useMemo(() => {
+    if (!selected?.ages) return [];
+    return selected.ages.map((age, i) => ({
+      age,
+      p10: Math.round(selected.percentiles.p10[i]),
+      p50: Math.round(selected.percentiles.p50[i]),
+      p90: Math.round(selected.percentiles.p90[i]),
+      p10to50: Math.round(selected.percentiles.p50[i] - selected.percentiles.p10[i]),
+      p50to90: Math.round(selected.percentiles.p90[i] - selected.percentiles.p50[i]),
+    }));
+  }, [selected]);
+
+  const best = [...scenarios].filter(s => s.id !== 'current').sort((a, b) => b.successRate - a.successRate)[0];
+  const safest = [...scenarios].sort((a, b) => b.p10End - a.p10End)[0];
+  const current = scenarios.find(s => s.id === 'current');
+
+  const barFill = (s, isSelected) => {
+    if (isSelected) return '#a855f7';       // purple — selected
+    if (s.id === 'current') return '#f59e0b'; // amber — current
+    if (s.successRate >= 0.9) return '#10b981';
+    if (s.successRate >= 0.75) return '#3b82f6';
+    return '#ef4444';
+  };
+
+  return (
+    <section className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-200">Allocation stress test — Monte Carlo</h2>
+        <p className="text-xs text-slate-500 mt-1">
+          Each scenario runs 500 simulations using your saved retirement plan
+          (age {currentAge} → {endAge}, spend {money(retirementInputs?.annualSpend || 0)}/yr,
+          SS {money(retirementInputs?.socialSecurity || 0)}/yr at {retirementInputs?.ssStartAge || 63}).
+          Click a row or bar to see its full projection cone below.
+        </p>
+      </div>
+
+      {/* Success-rate bar chart with reference lines */}
+      <div className="h-60">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={scenarios} margin={{ top: 20, right: 24, left: 0, bottom: 40 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke={GRID_STROKE} vertical={false} />
+            <XAxis
+              dataKey="label"
+              stroke={AXIS_COLOR}
+              tick={{ fill: AXIS_COLOR, fontSize: 11 }}
+              tickLine={{ stroke: AXIS_COLOR }}
+              axisLine={{ stroke: '#334155' }}
+              angle={-15}
+              textAnchor="end"
+              height={50}
+              interval={0}
+            />
+            <YAxis
+              stroke={AXIS_COLOR}
+              tick={{ fill: AXIS_COLOR, fontSize: 11 }}
+              tickLine={{ stroke: AXIS_COLOR }}
+              axisLine={{ stroke: '#334155' }}
+              domain={[0, 1]}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              width={44}
+            />
+            <ReferenceLine y={0.90} stroke="#10b981" strokeDasharray="4 4" strokeOpacity={0.5}
+              label={{ value: 'Strong 90%', position: 'right', fill: '#10b981', fontSize: 10 }} />
+            <ReferenceLine y={0.75} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.5}
+              label={{ value: 'Marginal 75%', position: 'right', fill: '#f59e0b', fontSize: 10 }} />
+            <Tooltip
+              cursor={{ fill: '#1e293b', opacity: 0.6 }}
+              contentStyle={TOOLTIP_STYLE}
+              itemStyle={TOOLTIP_ITEM}
+              labelStyle={TOOLTIP_LABEL}
+              formatter={(v, _k, item) => {
+                const s = item?.payload;
+                if (!s) return [pct(v, 0), 'Success'];
+                return [pct(v, 0), 'Success rate'];
+              }}
+              labelFormatter={(label) => {
+                const s = scenarios.find(x => x.label === label);
+                if (!s) return label;
+                return `${label}  ·  ${Math.round(s.stockPct * 100)}/${Math.round((1 - s.stockPct) * 100)}  ·  median ${money(s.medianEnd)}`;
+              }}
+            />
+            <Bar dataKey="successRate" radius={[6, 6, 0, 0]} onClick={(d) => setSelectedId(d.id)} style={{ cursor: 'pointer' }}>
+              {scenarios.map((s, i) => (
+                <Cell key={i} fill={barFill(s, s.id === selectedId)} stroke={s.id === selectedId ? '#e9d5ff' : 'none'} strokeWidth={s.id === selectedId ? 2 : 0} />
+              ))}
+              <LabelList dataKey="successRate" position="top" fill="#e2e8f0" fontSize={11}
+                formatter={(v) => pct(v, 0)} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Fan chart for selected scenario */}
+      <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg p-3">
+        <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+          <div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide">Projection cone</div>
+            <div className="text-lg font-semibold text-slate-100">
+              {selected.label}
+              <span className="text-sm text-slate-400 ml-2 font-normal">
+                · {Math.round(selected.stockPct * 100)}/{Math.round((1 - selected.stockPct) * 100)}
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-4 text-xs">
+            <StatMini label="Success" value={pct(selected.successRate, 0)} tone={selected.successRate >= 0.9 ? 'text-emerald-400' : selected.successRate >= 0.75 ? 'text-amber-400' : 'text-rose-400'} />
+            <StatMini label="p10" value={money(selected.p10End)} tone="text-rose-400" />
+            <StatMini label="Median" value={money(selected.medianEnd)} tone="text-slate-100" />
+            <StatMini label="p90" value={money(selected.p90End)} tone="text-emerald-400" />
+          </div>
+        </div>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={fanData} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
+              <defs>
+                <linearGradient id="coneFillAlloc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#a855f7" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#a855f7" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="2 4" stroke={GRID_STROKE} vertical={false} />
+              <XAxis dataKey="age" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 10 }}
+                tickLine={{ stroke: AXIS_COLOR }} axisLine={{ stroke: '#334155' }} />
+              <YAxis stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 10 }}
+                tickLine={{ stroke: AXIS_COLOR }} axisLine={{ stroke: '#334155' }}
+                tickFormatter={(v) => money(v)} width={72} />
+              <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.4} />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                itemStyle={TOOLTIP_ITEM}
+                labelStyle={TOOLTIP_LABEL}
+                labelFormatter={(age) => `Age ${age}`}
+                formatter={(v, k) => [money(v), k === 'p50' ? 'Median' : k === 'p10' ? 'Pessimistic (p10)' : 'Optimistic (p90)']}
+              />
+              <Area type="monotone" dataKey="p10" stackId="cone" stroke="none" fill="transparent" />
+              <Area type="monotone" dataKey="p10to50" stackId="cone" stroke="none" fill="url(#coneFillAlloc)" />
+              <Area type="monotone" dataKey="p50to90" stackId="cone" stroke="none" fill="url(#coneFillAlloc)" />
+              <Line type="monotone" dataKey="p50" stroke="#a855f7" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="p10" stroke="#ef4444" strokeWidth={1} dot={false} strokeDasharray="3 3" />
+              <Line type="monotone" dataKey="p90" stroke="#10b981" strokeWidth={1} dot={false} strokeDasharray="3 3" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Interactive scenario table */}
+      <div className="overflow-hidden rounded-lg border border-slate-700/60">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-900/60 text-xs text-slate-500 uppercase tracking-wide">
+              <th className="text-left py-2 px-3 font-medium">Scenario</th>
+              <th className="text-right py-2 px-2 font-medium">Split</th>
+              <th className="text-right py-2 px-2 font-medium">Success</th>
+              <th className="text-right py-2 px-2 font-medium">Median end</th>
+              <th className="text-right py-2 px-2 font-medium">p10 (bad)</th>
+              <th className="text-right py-2 px-3 font-medium">p90 (good)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scenarios.map(s => {
+              const isSelected = s.id === selectedId;
+              const isCurrent = s.id === 'current';
+              return (
+                <tr
+                  key={s.id}
+                  onClick={() => setSelectedId(s.id)}
+                  className={`cursor-pointer transition-colors border-t border-slate-700/40 ${
+                    isSelected ? 'bg-purple-900/30' : 'hover:bg-slate-700/30'
+                  }`}
+                >
+                  <td className="py-2 px-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-200">{s.label}</span>
+                      {isCurrent && <span className="text-[10px] px-1.5 py-0.5 bg-amber-900/50 text-amber-300 rounded">you</span>}
+                      {s.id === best?.id && <span className="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-300 rounded">top success</span>}
+                      {s.id === safest?.id && s.id !== best?.id && <span className="text-[10px] px-1.5 py-0.5 bg-sky-900/50 text-sky-300 rounded">safest p10</span>}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{s.description}</div>
+                  </td>
+                  <td className="text-right py-2 px-2 mono-nums text-slate-400">
+                    {Math.round(s.stockPct * 100)}/{Math.round((1 - s.stockPct) * 100)}
+                  </td>
+                  <td className={`text-right py-2 px-2 mono-nums font-semibold ${
+                    s.successRate >= 0.9 ? 'text-emerald-400' :
+                    s.successRate >= 0.75 ? 'text-amber-300' : 'text-rose-400'
+                  }`}>
+                    {pct(s.successRate, 0)}
+                  </td>
+                  <td className="text-right py-2 px-2 mono-nums text-slate-200">{money(s.medianEnd)}</td>
+                  <td className="text-right py-2 px-2 mono-nums text-rose-400">{money(s.p10End)}</td>
+                  <td className="text-right py-2 px-3 mono-nums text-emerald-400">{money(s.p90End)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Interpretation */}
+      <div className="text-xs text-slate-400 space-y-1.5 border-t border-slate-700/60 pt-3">
+        {current && best && (
+          <p>
+            <span className="text-amber-400 font-medium">Current {Math.round(current.stockPct * 100)}/{Math.round((1 - current.stockPct) * 100)}</span>
+            {' '}→ {pct(current.successRate, 0)} success, median {money(current.medianEnd)}, p10 {money(current.p10End)}.
+          </p>
+        )}
+        {best && current && best.id !== 'current' && (
+          <p>
+            <span className="text-emerald-400 font-medium">Top success</span>: {best.label}
+            {' '}({Math.round(best.stockPct * 100)}/{Math.round((1 - best.stockPct) * 100)})
+            — {pct(best.successRate, 0)} success
+            {best.successRate > current.successRate
+              ? ` (+${pct(best.successRate - current.successRate, 1)} vs current)`
+              : ''}.
+          </p>
+        )}
+        {safest && current && safest.id !== 'current' && (
+          <p>
+            <span className="text-sky-400 font-medium">Safest downside</span>: {safest.label}
+            {' '}({Math.round(safest.stockPct * 100)}/{Math.round((1 - safest.stockPct) * 100)})
+            — p10 {money(safest.p10End)}
+            {safest.p10End > current.p10End ? ` (${money(safest.p10End - current.p10End)} above current p10)` : ''}.
+          </p>
+        )}
+        <p className="text-slate-500 pt-1">
+          Higher stock % → higher expected return with wider p10–p90 band (more luck-dependent).
+          Lower stock % → narrower outcomes but may fail to outpace withdrawals. The "right" answer depends on
+          whether you optimize for expected value or worst-case floor.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function StatMini({ label, value, tone }) {
+  return (
+    <div className="text-right">
+      <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
+      <div className={`mono-nums font-medium ${tone}`}>{value}</div>
+    </div>
   );
 }
