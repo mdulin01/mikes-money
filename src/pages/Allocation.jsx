@@ -34,7 +34,15 @@ const PRESETS = [
 ];
 
 export default function Allocation({ holdings, investmentsTotal, data, netWorth }) {
-  const [yearsToRetirement, setYears] = useState(() => data?.preferences?.yearsToRetirement || 20);
+  // Default years-to-retirement computed from your age + planned retirement age.
+  // Falls back to a saved preference if present, otherwise computes live.
+  const defaultYTR = Math.max(
+    0,
+    (data?.retirement?.retireAge || 60) - CURRENT_AGE,
+  );
+  const [yearsToRetirement, setYears] = useState(
+    () => data?.preferences?.yearsToRetirement ?? defaultYTR,
+  );
 
   const allocation = useMemo(() => allocateHoldings(holdings), [holdings]);
   const target = useMemo(() => targetAllocation(yearsToRetirement), [yearsToRetirement]);
