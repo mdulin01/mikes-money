@@ -15,6 +15,7 @@ const DEFAULT_DATA = {
   scenarios: [],        // user-defined forecasts
   manualAccounts: [],   // accounts not on Plaid (home value, 529s, crypto wallets)
   manualHoldings: [],   // positions entered by hand (TIAA, 401k, accounts Plaid can't reach)
+  ignoredAccounts: [],  // Plaid accountIds to exclude from all calculations + UI
   preferences: {
     emergencyMonths: 6,
     targetSavingsRate: 0.25,
@@ -161,6 +162,14 @@ export function useMoneyData(user) {
     return updateConfig({ manualHoldings: next });
   }, [data, updateConfig]);
 
+  const toggleAccountIgnored = useCallback((accountId) => {
+    const current = data?.ignoredAccounts || [];
+    const next = current.includes(accountId)
+      ? current.filter(x => x !== accountId)
+      : [...current, accountId];
+    return updateConfig({ ignoredAccounts: next });
+  }, [data, updateConfig]);
+
   const categorizeTransaction = useCallback((txnId, category) => {
     const ref = doc(db, COLLECTIONS.TRANSACTIONS, txnId);
     return updateDoc(ref, { category, categorizedBy: 'user' });
@@ -169,7 +178,9 @@ export function useMoneyData(user) {
   // --- Derived ---
 
   const netWorth = useMemo(() => {
-    const plaid = accounts.reduce((sum, a) => {
+    // visibleAccounts is computed below — use raw accounts here filtered inline to avoid TDZ
+    const ignored = new Set(data?.ignoredAccounts || []);
+    const plaid = accounts.filter(a => !ignored.has(a.id)).reduce((sum, a) => {
       const sign = ['loan', 'credit', 'mortgage'].includes(a.type) ? -1 : 1;
       return sum + sign * (a.balance || 0);
     }, 0);
@@ -182,17 +193,37 @@ export function useMoneyData(user) {
 
   const currentMonthSpend = useMemo(() => {
     const m = toLocalMonthStr();
+    const ignored = new Set(data?.ignoredAccounts || []);
     return recentTxns
-      .filter(t => (t.date || '').startsWith(m) && t.amount > 0 && t.category !== 'transfer')
+      .filter(t => !ignored.has(t.accountId) && (t.date || '').startsWith(m) && t.amount > 0 && t.category !== 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
-  }, [recentTxns]);
+  }, [recentTxns, data]);
 
-  // Merge Plaid-synced + manually-entered holdings. Manual ones get a `manual: true` flag
-  // and use negative ids-to-manual-array-id mapping so UI can distinguish.
+  // Account ignore-list — filtered out of net worth, holdings, transactions, allocations.
+  // Use case: shared / family / business accounts that Plaid pulled but shouldn't count.
+  const ignoredIds = useMemo(
+    () => new Set(data?.ignoredAccounts || []),
+    [data?.ignoredAccounts],
+  );
+
+  const visibleAccounts = useMemo(
+    () => accounts.filter(a => !ignoredIds.has(a.id)),
+    [accounts, ignoredIds],
+  );
+  const visibleTxns = useMemo(
+    () => recentTxns.filter(t => !ignoredIds.has(t.accountId)),
+    [recentTxns, ignoredIds],
+  );
+  const visibleHoldings = useMemo(
+    () => holdings.filter(h => !ignoredIds.has(h.accountId)),
+    [holdings, ignoredIds],
+  );
+
+  // Merge Plaid-synced + manually-entered holdings. Manual ones get a `manual: true` flag.
   const allHoldings = useMemo(() => {
     const manual = (data?.manualHoldings || []).map(h => ({ ...h, manual: true }));
-    return [...holdings, ...manual];
-  }, [holdings, data]);
+    return [...visibleHoldings, ...manual];
+  }, [visibleHoldings, data]);
 
   const investmentsTotal = useMemo(
     () => allHoldings.reduce((s, h) => s + (h.institutionValue || 0), 0),
@@ -202,10 +233,12 @@ export function useMoneyData(user) {
   return {
     data,
     loading,
-    accounts,
-    recentTxns,
-    holdings: allHoldings,
-    plaidHoldings: holdings,
+    accounts: visibleAccounts,         // default — ignored accounts excluded
+    allAccounts: accounts,             // full list incl. ignored (for Accounts page UI)
+    ignoredAccountIds: ignoredIds,     // Set of accountIds currently ignored
+    recentTxns: visibleTxns,
+    holdings: allHoldings,             // visible Plaid holdings + manual holdings
+    plaidHoldings: visibleHoldings,
     liabilities,
     netWorthHistory,
     netWorth,
@@ -223,6 +256,7 @@ export function useMoneyData(user) {
     addManualHolding,
     updateManualHolding,
     deleteManualHolding,
+    toggleAccountIgnored,
     categorizeTransaction,
   };
 }

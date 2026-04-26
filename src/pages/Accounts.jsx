@@ -3,10 +3,16 @@ import { money } from '../utils/format';
 import { ACCOUNT_TYPES } from '../constants';
 import PlaidLinkButton from '../components/PlaidLinkButton';
 
-export default function Accounts({ data, accounts, addManualAccount, updateManualAccount, deleteManualAccount }) {
+export default function Accounts({
+  data, allAccounts, ignoredAccountIds,
+  addManualAccount, updateManualAccount, deleteManualAccount,
+  toggleAccountIgnored,
+}) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'real-estate', side: 'asset', balance: 0 });
   const manual = data?.manualAccounts || [];
+  // Use allAccounts so ignored accounts are still visible here (for toggling on/off)
+  const accounts = allAccounts || [];
 
   const submit = () => {
     if (!form.name || !form.balance) return;
@@ -75,21 +81,44 @@ export default function Accounts({ data, accounts, addManualAccount, updateManua
       )}
 
       <section>
-        <h2 className="text-sm font-semibold text-slate-300 mb-2">Linked accounts ({accounts.length})</h2>
+        <h2 className="text-sm font-semibold text-slate-300 mb-2">
+          Linked accounts ({accounts.length}{ignoredAccountIds?.size ? ` · ${ignoredAccountIds.size} ignored` : ''})
+        </h2>
         {accounts.length === 0 && (
           <p className="text-slate-500 text-sm">No accounts linked yet. Click "Link account" to connect via Plaid.</p>
         )}
         <ul className="divide-y divide-slate-700/60 bg-slate-800 rounded-xl border border-slate-700">
-          {accounts.map(a => (
-            <li key={a.id} className="flex justify-between items-center px-4 py-3 text-sm">
-              <div>
-                <div className="font-medium">{a.name}</div>
-                <div className="text-slate-500 text-xs">{a.institution} · {a.type}{a.mask ? ` ····${a.mask}` : ''}</div>
-              </div>
-              <div className="mono-nums">{money(a.balance, { cents: true })}</div>
-            </li>
-          ))}
+          {accounts.map(a => {
+            const isIgnored = ignoredAccountIds?.has(a.id);
+            return (
+              <li key={a.id}
+                className={`flex justify-between items-center px-4 py-3 text-sm gap-3 ${isIgnored ? 'opacity-50' : ''}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium flex items-center gap-2">
+                    {a.name}
+                    {isIgnored && <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">ignored</span>}
+                  </div>
+                  <div className="text-slate-500 text-xs">{a.institution} · {a.type}{a.mask ? ` ····${a.mask}` : ''}</div>
+                </div>
+                <div className="mono-nums">{money(a.balance, { cents: true })}</div>
+                <button
+                  onClick={() => toggleAccountIgnored(a.id)}
+                  className="text-xs text-slate-500 hover:text-slate-200 px-2"
+                  title={isIgnored ? 'Include in net worth + analyses' : 'Exclude from net worth + analyses'}
+                >
+                  {isIgnored ? 'Unignore' : 'Ignore'}
+                </button>
+              </li>
+            );
+          })}
         </ul>
+        {ignoredAccountIds?.size > 0 && (
+          <p className="text-xs text-slate-500 mt-2">
+            Ignored accounts (e.g. shared / family) are excluded from net worth, holdings, allocation,
+            transactions, and all retirement calculations. Their balance still shows here so you can toggle.
+          </p>
+        )}
       </section>
 
       <section>
