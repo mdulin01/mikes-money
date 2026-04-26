@@ -76,10 +76,10 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
   // === Actionable insights ===
   const insights = useMemo(
     () => generateInsights({
-      holdings, accounts, investmentsTotal, netWorth, recentTxns, data,
+      holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data,
       monthlySpend: avgMonthlySpend,
     }),
-    [holdings, accounts, investmentsTotal, netWorth, recentTxns, data, avgMonthlySpend],
+    [holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data, avgMonthlySpend],
   );
 
   return (

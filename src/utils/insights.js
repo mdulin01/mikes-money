@@ -3,7 +3,9 @@
 // severity: 'warn' | 'info' | 'good'
 
 import { classifyHolding } from './assetClass';
-import { computeSectorTotals } from './sectorMap';
+import { computeSectorTotals, SECTOR_MAP } from './sectorMap';
+import { money, pct } from './format';
+import { toLocalDateStr } from './dateUtils';
 
 export function cashRunwayMonths({ accounts, monthlySpend }) {
   if (!monthlySpend) return null;
@@ -33,16 +35,76 @@ export function withdrawalRate({ netWorth, investmentsTotal, annualSpend, annual
   return portfolioDraw / denom;
 }
 
+/**
+ * Detect a single-sector fund (or any non-diversified position) that's overweight
+ * + check if the market is having a strong day so the trim is well-timed.
+ * Highest priority — surfaces FIRST on Dashboard if it triggers.
+ */
+function rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory }) {
+  if (!investmentsTotal || !holdings?.length) return null;
+
+  // Find sector-concentrated positions: single-sector fund > 15% of investments
+  const concentrated = holdings
+    .filter(h => {
+      const ticker = (h.ticker || '').toUpperCase();
+      const sectorMix = SECTOR_MAP[ticker];
+      // Single-sector if any one sector is ≥80% of the fund's mix
+      const isSingleSector = sectorMix && Object.values(sectorMix).some(p => p >= 0.8);
+      return isSingleSector && (h.institutionValue || 0) / investmentsTotal > 0.15;
+    })
+    .sort((a, b) => (b.institutionValue || 0) - (a.institutionValue || 0));
+
+  if (!concentrated.length) return null;
+  const top = concentrated[0];
+  const currentPct = top.institutionValue / investmentsTotal;
+  const targetPct = 0.10;
+  const trimAmount = top.institutionValue - (investmentsTotal * targetPct);
+  if (trimAmount <= 0) return null;
+
+  // Check for "strong market day" — compare today's investments to most recent snapshot
+  // Need at least 2 snapshots; skip today's if it exists.
+  const today = toLocalDateStr();
+  const sorted = [...(netWorthHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
+  const priorSnap = sorted.find(s => s.date < today && s.investments != null);
+  const priorInv = priorSnap?.investments || 0;
+  const dayChange = priorInv > 0 ? (investmentsTotal - priorInv) / priorInv : null;
+
+  // Strong day = +1% or more in investments since last snapshot
+  const isStrongDay = dayChange !== null && dayChange >= 0.01;
+
+  if (isStrongDay) {
+    return {
+      severity: 'info',
+      title: `📈 Strong day (+${pct(dayChange, 1)}) — good time to trim ${top.ticker}`,
+      body: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio (${money(top.institutionValue)}). Selling on a green day reduces concentration without paying capital gains on a recovery you didn't capture.`,
+      action: `Sell ~${money(trimAmount)} of ${top.ticker} → buy a broad index (VTI / VOO) to bring concentration to ~${pct(targetPct, 0)}.`,
+    };
+  }
+
+  // Standing concentration warning (lower priority since it's there every day)
+  return {
+    severity: 'warn',
+    title: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio`,
+    body: `Single-sector concentration of ${money(top.institutionValue)} adds idiosyncratic risk. A single bad sector quarter hits you harder than the market.`,
+    action: `Trim ~${money(trimAmount)} on the next strong market day (the app will flag it for you).`,
+  };
+}
+
 export function generateInsights({
   holdings,
   accounts,
   investmentsTotal,
   netWorth,
   recentTxns,
+  netWorthHistory,
   data,
   monthlySpend,
 }) {
   const rules = [];
+
+  // Highest priority: rebalance opportunity (especially on strong-market days)
+  const reb = rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory });
+  if (reb) rules.push(reb);
 
   // 1. Cash runway
   const runway = cashRunwayMonths({ accounts, monthlySpend });
