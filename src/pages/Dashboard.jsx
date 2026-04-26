@@ -5,6 +5,7 @@ import { ACCOUNT_TYPES } from '../constants';
 import NetWorthChart from '../components/NetWorthChart';
 import { simulate } from '../utils/monteCarlo';
 import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRate } from '../utils/insights';
+import { useMarketQuotes } from '../hooks/useMarketQuotes';
 
 export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory }) {
   const month = toLocalMonthStr();
@@ -73,13 +74,24 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     [accounts, avgMonthlySpend],
   );
 
+  // === Live market quotes for the strong-day rebalance prompt ===
+  const watchTickers = useMemo(() => {
+    // Pull tickers for any holding > 5% of investments + always SPY/QQQ for market context
+    const interesting = holdings
+      .filter(h => h.ticker && h.institutionValue && investmentsTotal && h.institutionValue / investmentsTotal > 0.05)
+      .map(h => h.ticker.toUpperCase());
+    return [...new Set([...interesting, 'SPY', 'QQQ'])];
+  }, [holdings, investmentsTotal]);
+
+  const { quotes: marketQuotes, fetchedAt: quotesFetchedAt } = useMarketQuotes(watchTickers);
+
   // === Actionable insights ===
   const insights = useMemo(
     () => generateInsights({
       holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data,
-      monthlySpend: avgMonthlySpend,
+      monthlySpend: avgMonthlySpend, marketQuotes,
     }),
-    [holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data, avgMonthlySpend],
+    [holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data, avgMonthlySpend, marketQuotes],
   );
 
   return (

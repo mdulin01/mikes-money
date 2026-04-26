@@ -153,6 +153,60 @@ export const snapshotNetWorth = onCall(async (req) => {
   return snapshotNetWorthNow();
 });
 
+/* ----------------------------- getMarketQuotes ----------------------------- */
+// Fetches intraday quotes from Yahoo Finance (free, no auth required).
+// Returns price + day's % change for any ticker. Used for the strong-market-day
+// rebalance prompt on the Dashboard.
+
+export const getMarketQuotes = onCall(async (req) => {
+  assertOwner(req.auth);
+  const { tickers = ['SPY'] } = req.data || {};
+  if (!Array.isArray(tickers) || !tickers.length) {
+    throw new HttpsError('invalid-argument', 'tickers must be a non-empty array');
+  }
+
+  const quotes = {};
+  for (const raw of tickers.slice(0, 25)) {
+    const ticker = String(raw).toUpperCase().trim();
+    if (!ticker) continue;
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=2d&interval=1d`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      if (!res.ok) {
+        quotes[ticker] = { error: `HTTP ${res.status}` };
+        continue;
+      }
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (!meta) {
+        quotes[ticker] = { error: 'no data' };
+        continue;
+      }
+      const price = meta.regularMarketPrice;
+      const prev = meta.chartPreviousClose ?? meta.previousClose;
+      if (price == null || prev == null) {
+        quotes[ticker] = { error: 'incomplete data' };
+        continue;
+      }
+      quotes[ticker] = {
+        price,
+        previousClose: prev,
+        change: price - prev,
+        changePct: (price - prev) / prev,
+        timestamp: meta.regularMarketTime,
+        currency: meta.currency,
+        marketState: meta.marketState, // PRE | REGULAR | POST | CLOSED
+      };
+    } catch (e) {
+      console.error(`Failed to fetch ${ticker}:`, e.message);
+      quotes[ticker] = { error: e.message };
+    }
+  }
+  return { quotes, fetchedAt: Date.now() };
+});
+
 /* ---------------------- importNetWorthHistory (backfill) ---------------------- */
 
 export const importNetWorthHistory = onCall(async (req) => {

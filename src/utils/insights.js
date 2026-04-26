@@ -40,7 +40,7 @@ export function withdrawalRate({ netWorth, investmentsTotal, annualSpend, annual
  * + check if the market is having a strong day so the trim is well-timed.
  * Highest priority — surfaces FIRST on Dashboard if it triggers.
  */
-function rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory }) {
+function rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory, marketQuotes }) {
   if (!investmentsTotal || !holdings?.length) return null;
 
   // Find sector-concentrated positions: single-sector fund > 15% of investments
@@ -61,32 +61,57 @@ function rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory }) {
   const trimAmount = top.institutionValue - (investmentsTotal * targetPct);
   if (trimAmount <= 0) return null;
 
-  // Check for "strong market day" — compare today's investments to most recent snapshot
-  // Need at least 2 snapshots; skip today's if it exists.
-  const today = toLocalDateStr();
-  const sorted = [...(netWorthHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
-  const priorSnap = sorted.find(s => s.date < today && s.investments != null);
-  const priorInv = priorSnap?.investments || 0;
-  const dayChange = priorInv > 0 ? (investmentsTotal - priorInv) / priorInv : null;
+  // Strong-market-day check — prefer LIVE intraday quote of the actual ticker.
+  // Fall back to net-worth snapshot delta if live quote unavailable.
+  const tickerUpper = (top.ticker || '').toUpperCase();
+  const liveQuote = marketQuotes?.[tickerUpper];
+  const spyQuote = marketQuotes?.SPY;
 
-  // Strong day = +1% or more in investments since last snapshot
-  const isStrongDay = dayChange !== null && dayChange >= 0.01;
+  let dayChange = null;
+  let source = null;
+  let dayLabel = '';
+
+  if (liveQuote && !liveQuote.error && typeof liveQuote.changePct === 'number') {
+    dayChange = liveQuote.changePct;
+    source = 'live-ticker';
+    dayLabel = `${top.ticker} ${dayChange >= 0 ? '+' : ''}${pct(dayChange, 1)}`;
+  } else if (spyQuote && !spyQuote.error && typeof spyQuote.changePct === 'number') {
+    dayChange = spyQuote.changePct;
+    source = 'live-spy';
+    dayLabel = `Market (SPY) ${dayChange >= 0 ? '+' : ''}${pct(dayChange, 1)}`;
+  } else {
+    // Fallback: compare today's investments total to most recent prior snapshot
+    const today = toLocalDateStr();
+    const sorted = [...(netWorthHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
+    const priorSnap = sorted.find(s => s.date < today && s.investments != null);
+    const priorInv = priorSnap?.investments || 0;
+    if (priorInv > 0) {
+      dayChange = (investmentsTotal - priorInv) / priorInv;
+      source = 'snapshot';
+      dayLabel = `Snapshot ${dayChange >= 0 ? '+' : ''}${pct(dayChange, 1)}`;
+    }
+  }
+
+  // Strong day threshold differs slightly by source
+  const threshold = source === 'live-ticker' ? 0.012 : 0.01;
+  const isStrongDay = dayChange !== null && dayChange >= threshold;
+  const marketClosed = liveQuote?.marketState && liveQuote.marketState !== 'REGULAR';
 
   if (isStrongDay) {
     return {
       severity: 'info',
-      title: `📈 Strong day (+${pct(dayChange, 1)}) — good time to trim ${top.ticker}`,
-      body: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio (${money(top.institutionValue)}). Selling on a green day reduces concentration without paying capital gains on a recovery you didn't capture.`,
+      title: `📈 ${dayLabel} — good time to trim ${top.ticker}`,
+      body: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio (${money(top.institutionValue)}). Selling on a green day reduces concentration at a higher price.${marketClosed ? ' (Market closed — quote is from last session.)' : ''}`,
       action: `Sell ~${money(trimAmount)} of ${top.ticker} → buy a broad index (VTI / VOO) to bring concentration to ~${pct(targetPct, 0)}.`,
     };
   }
 
-  // Standing concentration warning (lower priority since it's there every day)
+  // Standing concentration warning (every day until trimmed)
   return {
     severity: 'warn',
     title: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio`,
-    body: `Single-sector concentration of ${money(top.institutionValue)} adds idiosyncratic risk. A single bad sector quarter hits you harder than the market.`,
-    action: `Trim ~${money(trimAmount)} on the next strong market day (the app will flag it for you).`,
+    body: `Single-sector concentration of ${money(top.institutionValue)} adds idiosyncratic risk.${dayChange !== null ? ` ${dayLabel} so far today.` : ''}`,
+    action: `Trim ~${money(trimAmount)} on the next strong day (≥${pct(threshold, 1)} on ${tickerUpper}). The app will flag it.`,
   };
 }
 
@@ -99,11 +124,12 @@ export function generateInsights({
   netWorthHistory,
   data,
   monthlySpend,
+  marketQuotes,
 }) {
   const rules = [];
 
   // Highest priority: rebalance opportunity (especially on strong-market days)
-  const reb = rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory });
+  const reb = rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory, marketQuotes });
   if (reb) rules.push(reb);
 
   // 1. Cash runway
