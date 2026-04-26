@@ -31,6 +31,20 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     .filter(t => (t.date || '') >= monthStart(month) && t.amount < 0 && t.category !== 'transfer')
     .reduce((s, t) => s + Math.abs(t.amount), 0);
 
+  // Lookup table for accountId → account display info
+  const accountById = useMemo(
+    () => Object.fromEntries(accounts.map(a => [a.id, a])),
+    [accounts],
+  );
+
+  const accountLabel = (t) => {
+    const a = accountById[t.accountId];
+    if (!a) return null;
+    const inst = a.institution || a.name || 'Account';
+    const tail = a.mask ? `····${a.mask}` : '';
+    return `${inst}${tail ? ' ' + tail : ''}`;
+  };
+
   const savingsRate = monthIncome > 0 ? (monthIncome - currentMonthSpend) / monthIncome : 0;
 
   const assets = byType.filter(g => g.side === 'asset').reduce((s, g) => s + g.total, 0);
@@ -139,17 +153,30 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
         <Panel title="Recent transactions" className="md:col-span-2">
           {recentTxns.length === 0 && <p className="text-slate-500 text-sm">No transactions yet. Link an account to sync.</p>}
           <ul className="divide-y divide-slate-700/60">
-            {recentTxns.slice(0, 8).map(t => (
-              <li key={t.id} className="flex justify-between py-2 text-sm">
-                <div className="min-w-0 flex-1 pr-3 truncate">
-                  <div className="text-slate-200 truncate">{t.merchantName || t.name || 'Transaction'}</div>
-                  <div className="text-slate-500 text-xs">{t.date} · {t.category || 'Uncategorized'}</div>
-                </div>
-                <div className={`mono-nums ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
-                  {signedMoney(-t.amount, { cents: true })}
-                </div>
-              </li>
-            ))}
+            {recentTxns.slice(0, 8).map(t => {
+              const acct = accountLabel(t);
+              return (
+                <li key={t.id} className="flex justify-between py-2 text-sm">
+                  <div className="min-w-0 flex-1 pr-3">
+                    <div className="text-slate-200 truncate">{t.merchantName || t.name || 'Transaction'}</div>
+                    <div className="text-slate-500 text-xs truncate">
+                      {t.date}
+                      <span className="mx-1.5 text-slate-700">·</span>
+                      {t.category || 'Uncategorized'}
+                      {acct && (
+                        <>
+                          <span className="mx-1.5 text-slate-700">·</span>
+                          <span className="text-slate-400">{acct}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className={`mono-nums shrink-0 ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
+                    {signedMoney(-t.amount, { cents: true })}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </Panel>
       </section>
