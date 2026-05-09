@@ -14,6 +14,7 @@ export const COLLECTIONS = {
   HOLDINGS: 'holdings',             // Investment positions (ticker, qty, value)
   LIABILITIES: 'liabilities',       // Credit/mortgage/student loan detail
   NET_WORTH_HISTORY: 'netWorthHistory', // Daily snapshots
+  DASHBOARD_SNAPSHOTS: 'dashboardSnapshots', // Daily computed dashboard values for Rupert
 };
 
 // Single user-doc id

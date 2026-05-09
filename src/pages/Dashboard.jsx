@@ -6,6 +6,7 @@ import NetWorthChart from '../components/NetWorthChart';
 import { simulate } from '../utils/monteCarlo';
 import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRate } from '../utils/insights';
 import { useMarketQuotes } from '../hooks/useMarketQuotes';
+import { useDailySnapshot } from '../hooks/useDailySnapshot';
 
 export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory }) {
   const month = toLocalMonthStr();
@@ -93,6 +94,28 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     }),
     [holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data, avgMonthlySpend, marketQuotes],
   );
+
+  // === Daily snapshot writer (for Rupert) ===
+  // Idempotent: writes once per local day. No-op if today's doc already exists.
+  useDailySnapshot({
+    data,
+    accounts,
+    netWorth,
+    assets,
+    liabilities,
+    savingsRate,
+    monthIncome,
+    currentMonthSpend,
+    retirementSuccess: readiness?.successRate ?? null,
+    withdrawalRate: readiness?.wRate ?? null,
+    cashRunwayMonths: runway,
+    avgMonthlySpend,
+    byType,
+    investmentsTotal,
+    holdings,
+    insights,
+    netWorthHistory,
+  });
 
   return (
     <main className="max-w-6xl mx-auto p-4 space-y-6">
