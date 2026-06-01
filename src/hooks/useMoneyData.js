@@ -1,7 +1,8 @@
+import { classify } from '../utils/classify';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   doc, setDoc, onSnapshot, deleteField,
-  collection, query, where, orderBy, limit, updateDoc,
+  collection, query, where, orderBy, limit, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase-config';
 import { COLLECTIONS, USER_DOC_ID, DEFAULT_CATEGORIES } from '../constants';
@@ -181,6 +182,30 @@ export function useMoneyData(user) {
     return updateDoc(ref, { txClass: txClass || null, classBy: txClass ? 'user' : null });
   }, []);
 
+  // Bulk auto-categorize: assigns spending category (+ class + home-office flag) to every
+  // uncategorized txn using the rules engine. High-confidence applied; size-detected rent
+  // flagged needsReview; unmatched left uncategorized for manual review. Batched (Firestore 500 cap).
+  const autoCategorizeAll = useCallback(async (txns, acctById) => {
+    const todo = (txns || []).filter(t => !t.category || t.category === 'uncategorized');
+    let applied = 0, review = 0, skipped = 0;
+    for (let i = 0; i < todo.length; i += 450) {
+      const batch = writeBatch(db);
+      let n = 0;
+      for (const t of todo.slice(i, i + 450)) {
+        const c = classify(t, acctById && acctById[t.accountId]);
+        if (!c || !c.category) { skipped++; continue; }
+        const upd = { category: c.category, categorizedBy: 'auto' };
+        if (!t.txClass && c.klass) { upd.txClass = c.klass; upd.classBy = 'auto'; }
+        if (c.homeOffice) upd.homeOffice = true;
+        if (c.conf === 'review') { upd.needsReview = true; review++; }
+        batch.update(doc(db, COLLECTIONS.TRANSACTIONS, t.id), upd);
+        applied++; n++;
+      }
+      if (n > 0) await batch.commit();
+    }
+    return { applied, review, skipped };
+  }, []);
+
   // --- Derived ---
 
   const netWorth = useMemo(() => {
@@ -265,5 +290,6 @@ export function useMoneyData(user) {
     toggleAccountIgnored,
     categorizeTransaction,
     setTransactionClass,
+    autoCategorizeAll,
   };
 }
