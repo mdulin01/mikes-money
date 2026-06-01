@@ -31,6 +31,7 @@ export const SECTIONS = [
   { id: 'budgets',     label: 'Budgets',     emoji: '🎯' },
   { id: 'cashflow',    label: 'Cash Flow',   emoji: '💰' },
   { id: 'scenarios',   label: 'Scenarios',   emoji: '🔮' },
+  { id: 'tax',         label: 'Tax',         emoji: '🧾' },
 ];
 
 // Plaid account types → internal classification
