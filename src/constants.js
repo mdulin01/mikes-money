@@ -68,3 +68,12 @@ export const DEFAULT_CATEGORIES = [
   { id: 'other-inc',     label: 'Other Income',   emoji: '💵', kind: 'income' },
   { id: 'transfer',      label: 'Transfer',       emoji: '🔄', kind: 'transfer' },
 ];
+
+// Tax / ownership class layered on top of categories (Sch C business vs Sch E rental vs personal).
+export const CLASSES = [
+  { id: 'business',    label: 'Business',           emoji: '💼' },
+  { id: 'rental',      label: 'Rental',             emoji: '🏘️' },
+  { id: 'personal',    label: 'Personal',           emoji: '🏡' },
+  { id: 'work-travel', label: 'Work Travel',        emoji: '✈️' },
+  { id: 'split',       label: 'Biz/Rental (50/50)', emoji: '🔀' },
+];

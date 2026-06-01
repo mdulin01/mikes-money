@@ -175,6 +175,12 @@ export function useMoneyData(user) {
     return updateDoc(ref, { category, categorizedBy: 'user' });
   }, []);
 
+  // Tax/ownership class. null clears back to auto-rule classification.
+  const setTransactionClass = useCallback((txnId, txClass) => {
+    const ref = doc(db, COLLECTIONS.TRANSACTIONS, txnId);
+    return updateDoc(ref, { txClass: txClass || null, classBy: txClass ? 'user' : null });
+  }, []);
+
   // --- Derived ---
 
   const netWorth = useMemo(() => {
@@ -258,5 +264,6 @@ export function useMoneyData(user) {
     deleteManualHolding,
     toggleAccountIgnored,
     categorizeTransaction,
+    setTransactionClass,
   };
 }
