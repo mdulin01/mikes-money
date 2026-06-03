@@ -2,25 +2,46 @@ import { useMemo, useState } from 'react';
 import { signedMoney } from '../utils/format';
 import { humanDate } from '../utils/dateUtils';
 import { CLASSES } from '../constants';
-import { effectiveClass, classify } from '../utils/classify';
+import { effectiveClass, classify, merchantKeyword } from '../utils/classify';
 import { PROPERTIES, PROPERTY_BY_ID, effectiveProperty } from '../data/properties';
 
 const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
-export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, autoCategorizeAll }) {
+export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, applyRuleToTxns, autoCategorizeAll }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
   const [propertyFilter, setPropertyFilter] = useState('all');
   const [busy, setBusy] = useState(false);
   const categories = data?.categories || [];
+  const userRules = data?.userRules || [];
   const catById = useMemo(() => Object.fromEntries(categories.map(c => [c.id, c])), [categories]);
   const acctById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
 
+  // Group categories for optgroups in the picker
+  const catsByKind = useMemo(() => ({
+    income: categories.filter(c => c.kind === 'income'),
+    expense: categories.filter(c => c.kind === 'expense'),
+    transfer: categories.filter(c => c.kind === 'transfer'),
+  }), [categories]);
+
+  // Set of merchant keywords already covered by a user rule (so we don't keep nagging).
+  const userRuleKws = useMemo(() => {
+    const s = new Set();
+    for (const r of userRules) for (const k of (r.kw || [])) s.add(String(k).toLowerCase());
+    return s;
+  }, [userRules]);
+
+  const isCoveredByRule = (txn) => {
+    const payee = `${txn.merchantName || ''} ${txn.name || ''}`.toLowerCase();
+    for (const k of userRuleKws) if (payee.includes(k)) return true;
+    return false;
+  };
+
   const rows = useMemo(() => recentTxns.map(t => {
-    const sug = classify(t, acctById[t.accountId]);
-    return { ...t, _class: effectiveClass(t, acctById), _sugCat: sug?.category || null, _homeOffice: t.homeOffice || !!sug?.homeOffice, _property: effectiveProperty(t) };
-  }), [recentTxns, acctById]);
+    const sug = classify(t, acctById[t.accountId], userRules);
+    return { ...t, _class: effectiveClass(t, acctById, userRules), _sugCat: sug?.category || null, _homeOffice: t.homeOffice || !!sug?.homeOffice, _property: effectiveProperty(t) };
+  }), [recentTxns, acctById, userRules]);
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase().trim();
@@ -34,6 +55,34 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
   }, [rows, search, categoryFilter, classFilter, propertyFilter]);
 
   const total = useMemo(() => filtered.reduce((s, t) => s + (t.amount || 0), 0), [filtered]);
+  // Promote the current row's manual overrides to a saved user rule + apply to similar txns.
+  const learnRule = async (txn) => {
+    const kw = merchantKeyword(txn);
+    if (!kw || !addUserRule || !applyRuleToTxns) return;
+    const rule = { kw };
+    if (txn.categorizedBy === 'user' && txn.category && txn.category !== 'uncategorized') rule.category = txn.category;
+    if (txn.classBy === 'user' && txn.txClass) rule.klass = txn.txClass;
+    if (txn.propertyBy === 'user' && txn.propertyId) rule.propertyId = txn.propertyId;
+    if (!rule.category && !rule.klass && !rule.propertyId) return;
+    await addUserRule(rule);
+    // Apply to all transactions on screen (recentTxns), not just filtered, so propagation is global.
+    const { applied } = await applyRuleToTxns(rule, recentTxns);
+    // Lightweight feedback via title attribute on the next render — count includes the source row.
+    console.log('[user-rule]', kw, '→', rule, `applied to ${applied} txns`);
+  };
+
+  const similarCount = (txn) => {
+    const kw = merchantKeyword(txn);
+    if (!kw) return 0;
+    let n = 0;
+    for (const t of recentTxns) {
+      if (t.id === txn.id) continue;
+      const payee = `${t.merchantName || ''} ${t.name || ''}`.toLowerCase();
+      if (payee.includes(kw)) n++;
+    }
+    return n;
+  };
+
   const uncatCount = useMemo(() => rows.filter(t => !t.category || t.category === 'uncategorized').length, [rows]);
   const reviewCount = useMemo(() => rows.filter(t => t.needsReview).length, [rows]);
   const classTotals = useMemo(() => { const m = {}; for (const t of rows) m[t._class] = (m[t._class] || 0) + (t.amount || 0); return m; }, [rows]);
@@ -127,8 +176,22 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
               <select value={(t.category && t.category !== 'uncategorized') ? t.category : 'auto'} onChange={(e) => categorizeTransaction(t.id, e.target.value === 'auto' ? 'uncategorized' : e.target.value)}
                 className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${(t.category && t.category !== 'uncategorized') ? 'border-slate-700' : 'border-amber-600/50 text-slate-400'}`}>
                 <option value="auto">{sugCat ? `auto: ${sugCat.emoji} ${sugCat.label}` : 'Uncategorized'}</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+                {catsByKind.income.length > 0 && (<optgroup label="Income">{catsByKind.income.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
+                {catsByKind.expense.length > 0 && (<optgroup label="Expenses">{catsByKind.expense.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
+                {catsByKind.transfer.length > 0 && (<optgroup label="Transfer">{catsByKind.transfer.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
               </select>
+              {(() => {
+                const hasManual = t.categorizedBy === 'user' || t.classBy === 'user' || t.propertyBy === 'user';
+                if (!hasManual || isCoveredByRule(t)) return null;
+                const n = similarCount(t);
+                return (
+                  <button onClick={() => learnRule(t)}
+                    title={`Save '${merchantKeyword(t)}' as a rule and apply to ${n} other matching transaction${n === 1 ? '' : 's'}`}
+                    className="text-xs px-2 py-1 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/40">
+                    ✨ Save{n > 0 ? ` +${n}` : ''}
+                  </button>
+                );
+              })()}
               <div className={`mono-nums w-24 text-right ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-100'}`}>{signedMoney(-t.amount, { cents: true })}</div>
             </li>
           );

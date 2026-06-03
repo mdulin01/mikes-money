@@ -42,6 +42,7 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
   const shPct = priorAGI > 150000 ? 1.10 : 1.0;
 
   const acctById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
+  const userRules = data?.userRules || [];
   const year = new Date().getFullYear();
   const monthsElapsed = new Date().getMonth() + 1;
 
@@ -54,7 +55,7 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
     const perProperty = {};
     const ensure = (id) => (perProperty[id] = perProperty[id] || { inc: 0, exp: 0 });
     for (const t of cur) {
-      const c = effectiveClass(t, acctById); const a = t.amount || 0;
+      const c = effectiveClass(t, acctById, userRules); const a = t.amount || 0;
       if (c === 'business') { if (a < 0) bizInc += -a; else bizExp += a; }
       else if (c === 'work-travel') { if (a > 0) bizExp += a; }
       else if (c === 'rental') {
@@ -68,7 +69,7 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
     const schC = bizInc - bizExp - splitExp * 0.5;
     const schE = rentInc - rentExp - splitExp * 0.5;
     return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE, perProperty };
-  }, [recentTxns, acctById, year]);
+  }, [recentTxns, acctById, year, userRules]);
 
   const ann = monthsElapsed > 0 ? 12 / monthsElapsed : 1;
   const [projC, setProjC] = useState(Math.round(ytd.schC * ann));

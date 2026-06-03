@@ -25,7 +25,7 @@ const RULES = [
   { kw: ['starbucks', 'dunkin', 'peet', 'caribou coffee', 'dutch bros', 'coffee'], category: 'dining' },
   { kw: ['mcdonald', 'chick-fil', 'chipotle', 'panera', 'subway', 'wendy', 'taco bell', 'burger', 'pizza', 'restaurant', 'grill', ' cafe', 'doordash', 'uber eats', 'ubereats', 'grubhub', 'tavern', 'bistro', 'kitchen', 'brewery', 'bar &', 'sushi', 'thai', 'mexican'], category: 'dining' },
   // ---- GROCERIES ----
-  { kw: ['harris teeter', 'kroger', 'publix', 'food lion', 'whole foods', 'trader joe', 'aldi', 'wegmans', 'sprouts', 'costco', "sam's club", 'lidl'], category: 'groceries' },
+  { kw: ['harris teeter', 'harristeeter', 'ht *', 'kroger', 'publix', 'food lion', 'whole foods', 'trader joe', 'aldi', 'wegmans', 'sprouts', 'costco', "sam's club", 'lidl', 'fresh market', 'thefreshmarket', 'deep roots', 'lowes foods', "lowe's foods", 'weaver street', 'earth fare', "mom's organic", 'moms organic', "mom's market", 'butcher block', 'compare foods', 'super g mart', 'super g', 'piggly wiggly', 'instacart'], category: 'groceries' },
   // ---- GAS / TRANSPORT ----
   { kw: ['shell', 'exxon', 'bp#', 'bp ', 'chevron', 'circle k', 'speedway', 'marathon pet', 'sheetz', 'quiktrip', 'sunoco', 'citgo', 'mobil'], category: 'transport' },
   { kw: ['uber', 'lyft', 'parking', 'dmv', 'toll', 'ez pass', 'ezpass', 'ntta'], category: 'transport' },
@@ -48,11 +48,28 @@ const RULES = [
 ];
 
 // Returns { category, klass, homeOffice, conf, propertyId } or null.
-// conf: 'high' (keyword) | 'review' (size-based).
-export function classify(txn, account) {
+// conf: 'high' (keyword) | 'review' (size-based) | 'user' (learned from manual override).
+// userRules: optional Array<{ kw: string[], category?, klass?, propertyId?, homeOffice? }>
+// User rules are checked BEFORE built-in RULES so they always win.
+export function classify(txn, account, userRules) {
   const payee = `${txn.merchantName || ''} ${txn.name || ''}`;
   const inflow = (txn.amount || 0) < 0;
   const propMatch = classifyProperty(txn);
+  if (Array.isArray(userRules)) {
+    for (const r of userRules) {
+      if (!r || !r.kw) continue;
+      const kws = Array.isArray(r.kw) ? r.kw : [r.kw];
+      if (has(payee, kws.map(k => String(k).toLowerCase()))) {
+        return {
+          category: r.category || null,
+          klass: r.klass || 'personal',
+          homeOffice: !!r.homeOffice,
+          conf: 'user',
+          propertyId: r.propertyId || propMatch?.propertyId || null,
+        };
+      }
+    }
+  }
   for (const r of RULES) {
     if (r.inflow && !inflow) continue;
     if (has(payee, r.kw)) {
@@ -87,6 +104,22 @@ export function classify(txn, account) {
   return propMatch ? { category: null, klass: null, homeOffice: false, conf: 'low', propertyId: propMatch.propertyId } : null;
 }
 
-export function autoClass(txn, account) { const c = classify(txn, account); return c ? c.klass : null; }
-export const effectiveClass = (txn, acctById) => txn.txClass || autoClass(txn, acctById && acctById[txn.accountId]) || 'uncategorized';
-export const effectiveCategory = (txn, acctById) => txn.category && txn.category !== 'uncategorized' ? txn.category : ((classify(txn, acctById && acctById[txn.accountId]) || {}).category || 'uncategorized');
+export function autoClass(txn, account, userRules) { const c = classify(txn, account, userRules); return c ? c.klass : null; }
+export const effectiveClass = (txn, acctById, userRules) => txn.txClass || autoClass(txn, acctById && acctById[txn.accountId], userRules) || 'uncategorized';
+export const effectiveCategory = (txn, acctById, userRules) => txn.category && txn.category !== 'uncategorized' ? txn.category : ((classify(txn, acctById && acctById[txn.accountId], userRules) || {}).category || 'uncategorized');
+
+// Generate a normalized merchant keyword from a transaction (used when promoting a manual
+// categorization to a user rule). Lowercase, trim, strip transaction noise like trailing
+// store numbers, dates, and reference codes — keep just the merchant identity.
+export function merchantKeyword(txn) {
+  const raw = (txn.merchantName || txn.name || '').toLowerCase().trim();
+  if (!raw) return null;
+  // Strip trailing digits/IDs, common payment-rail suffixes, and parenthetical noise.
+  return raw
+    .replace(/\s+#?\d{2,}.*$/, '')            // "harris teeter #423" -> "harris teeter"
+    .replace(/\s+\d{2}\/\d{2}.*$/, '')      // dates
+    .replace(/\s+(pos|sq \*|tst\*|sp\*|sq\*|tst |pp\*|gp\*|in \*|crd|ach|web|pos pur|debit|recur).*$/, '')
+    .replace(/[,.;]+$/, '')
+    .trim() || raw;
+}
+

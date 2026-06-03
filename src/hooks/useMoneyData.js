@@ -17,6 +17,7 @@ const DEFAULT_DATA = {
   manualAccounts: [],   // accounts not on Plaid (home value, 529s, crypto wallets)
   manualHoldings: [],   // positions entered by hand (TIAA, 401k, accounts Plaid can't reach)
   ignoredAccounts: [],  // Plaid accountIds to exclude from all calculations + UI
+  userRules: [],        // Learned merchant rules: [{ kw: string[], category?, klass?, propertyId?, homeOffice?, createdAt }]
   preferences: {
     emergencyMonths: 6,
     targetSavingsRate: 0.25,
@@ -188,17 +189,81 @@ export function useMoneyData(user) {
     return updateDoc(ref, { propertyId: propertyId || null, propertyBy: propertyId ? 'user' : null });
   }, []);
 
+  // --- User-learned rules ----------------------------------------------------------
+  // Persist a merchant-keyword → category/class/property mapping. Auto-categorize
+  // checks these BEFORE built-in RULES, so later imports of the same merchant
+  // get the user's preferred categorization without manual work.
+  const addUserRule = useCallback((rule) => {
+    if (!rule || !rule.kw || (Array.isArray(rule.kw) ? !rule.kw.length : !String(rule.kw).trim())) return;
+    const current = data?.userRules || [];
+    const kwArr = Array.isArray(rule.kw) ? rule.kw.map(k => String(k).toLowerCase()) : [String(rule.kw).toLowerCase()];
+    // Dedupe: if a rule with the same first keyword already exists, replace it (so the latest wins).
+    const filtered = current.filter(r => !(r.kw && r.kw[0] === kwArr[0]));
+    const entry = {
+      kw: kwArr,
+      ...(rule.category ? { category: rule.category } : {}),
+      ...(rule.klass ? { klass: rule.klass } : {}),
+      ...(rule.propertyId ? { propertyId: rule.propertyId } : {}),
+      ...(rule.homeOffice ? { homeOffice: true } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    return updateConfig({ userRules: [...filtered, entry] });
+  }, [data, updateConfig]);
+
+  const removeUserRule = useCallback((kw) => {
+    const current = data?.userRules || [];
+    const k = String(kw).toLowerCase();
+    return updateConfig({ userRules: current.filter(r => !(r.kw && r.kw[0] === k)) });
+  }, [data, updateConfig]);
+
+  // Apply a rule (or rule-shaped object) to all matching transactions in `txns`.
+  // Returns { applied } count. Matches against `kw` (substring of merchantName + name).
+  // Skips transactions that already have a manual override on the field being set.
+  const applyRuleToTxns = useCallback(async (rule, txns) => {
+    if (!rule || !rule.kw) return { applied: 0 };
+    const kws = (Array.isArray(rule.kw) ? rule.kw : [rule.kw]).map(k => String(k).toLowerCase());
+    const matches = (txns || []).filter(t => {
+      const payee = `${t.merchantName || ''} ${t.name || ''}`.toLowerCase();
+      return kws.some(k => payee.includes(k));
+    });
+    let applied = 0;
+    for (let i = 0; i < matches.length; i += 450) {
+      const batch = writeBatch(db);
+      let n = 0;
+      for (const t of matches.slice(i, i + 450)) {
+        const upd = {};
+        if (rule.category && (!t.category || t.category === 'uncategorized' || t.categorizedBy === 'auto')) {
+          upd.category = rule.category; upd.categorizedBy = 'rule';
+        }
+        if (rule.klass && (!t.txClass || t.classBy === 'auto')) {
+          upd.txClass = rule.klass; upd.classBy = 'rule';
+        }
+        if (rule.propertyId && (!t.propertyId || t.propertyBy === 'auto')) {
+          upd.propertyId = rule.propertyId; upd.propertyBy = 'rule';
+        }
+        if (rule.homeOffice && !t.homeOffice) upd.homeOffice = true;
+        if (Object.keys(upd).length === 0) continue;
+        batch.update(doc(db, COLLECTIONS.TRANSACTIONS, t.id), upd);
+        applied++; n++;
+      }
+      if (n > 0) await batch.commit();
+    }
+    return { applied };
+  }, []);
+
+
   // Bulk auto-categorize: assigns spending category (+ class + home-office flag) to every
   // uncategorized txn using the rules engine. High-confidence applied; size-detected rent
   // flagged needsReview; unmatched left uncategorized for manual review. Batched (Firestore 500 cap).
   const autoCategorizeAll = useCallback(async (txns, acctById) => {
     const todo = (txns || []).filter(t => !t.category || t.category === 'uncategorized');
+    const userRules = data?.userRules || [];
     let applied = 0, review = 0, skipped = 0;
     for (let i = 0; i < todo.length; i += 450) {
       const batch = writeBatch(db);
       let n = 0;
       for (const t of todo.slice(i, i + 450)) {
-        const c = classify(t, acctById && acctById[t.accountId]);
+        const c = classify(t, acctById && acctById[t.accountId], userRules);
         if (!c || !c.category) { skipped++; continue; }
         const upd = { category: c.category, categorizedBy: 'auto' };
         if (!t.txClass && c.klass) { upd.txClass = c.klass; upd.classBy = 'auto'; }
@@ -211,7 +276,7 @@ export function useMoneyData(user) {
       if (n > 0) await batch.commit();
     }
     return { applied, review, skipped };
-  }, []);
+  }, [data]);
 
   // --- Derived ---
 
@@ -298,6 +363,9 @@ export function useMoneyData(user) {
     categorizeTransaction,
     setTransactionClass,
     setTransactionProperty,
+    addUserRule,
+    removeUserRule,
+    applyRuleToTxns,
     autoCategorizeAll,
   };
 }
