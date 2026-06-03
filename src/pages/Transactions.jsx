@@ -3,13 +3,15 @@ import { signedMoney } from '../utils/format';
 import { humanDate } from '../utils/dateUtils';
 import { CLASSES } from '../constants';
 import { effectiveClass, classify } from '../utils/classify';
+import { PROPERTIES, PROPERTY_BY_ID, effectiveProperty } from '../data/properties';
 
 const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
-export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, autoCategorizeAll }) {
+export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, autoCategorizeAll }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
+  const [propertyFilter, setPropertyFilter] = useState('all');
   const [busy, setBusy] = useState(false);
   const categories = data?.categories || [];
   const catById = useMemo(() => Object.fromEntries(categories.map(c => [c.id, c])), [categories]);
@@ -17,7 +19,7 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
 
   const rows = useMemo(() => recentTxns.map(t => {
     const sug = classify(t, acctById[t.accountId]);
-    return { ...t, _class: effectiveClass(t, acctById), _sugCat: sug?.category || null, _homeOffice: t.homeOffice || !!sug?.homeOffice };
+    return { ...t, _class: effectiveClass(t, acctById), _sugCat: sug?.category || null, _homeOffice: t.homeOffice || !!sug?.homeOffice, _property: effectiveProperty(t) };
   }), [recentTxns, acctById]);
 
   const filtered = useMemo(() => {
@@ -25,10 +27,11 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
     return rows.filter(t => {
       if (categoryFilter === 'review' ? !t.needsReview : (categoryFilter !== 'all' && (t.category || 'uncategorized') !== categoryFilter)) return false;
       if (classFilter !== 'all' && t._class !== classFilter) return false;
+      if (propertyFilter !== 'all') { if (propertyFilter === 'none' ? t._property : t._property !== propertyFilter) return false; }
       if (!s) return true;
       return (t.name || t.merchantName || '').toLowerCase().includes(s) || (t.category || '').toLowerCase().includes(s);
     });
-  }, [rows, search, categoryFilter, classFilter]);
+  }, [rows, search, categoryFilter, classFilter, propertyFilter]);
 
   const total = useMemo(() => filtered.reduce((s, t) => s + (t.amount || 0), 0), [filtered]);
   const uncatCount = useMemo(() => rows.filter(t => !t.category || t.category === 'uncategorized').length, [rows]);
@@ -75,6 +78,11 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
       <div className="flex gap-2 flex-wrap">
         <input placeholder="Search merchant or category…" value={search} onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-[200px] bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+        <select value={propertyFilter} onChange={(e) => setPropertyFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All properties</option>
+          <option value="none">— no property —</option>
+          {PROPERTIES.map(p => <option key={p.id} value={p.id}>🏠 {p.nickname}</option>)}
+        </select>
         <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
           <option value="all">All classes</option><option value="uncategorized">Unclassed</option>
           {CLASSES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
@@ -104,6 +112,18 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
                 <option value="auto">{t._class === 'uncategorized' ? '— class —' : `auto: ${CBYID[t._class]?.emoji || ''}`}</option>
                 {CLASSES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
               </select>
+              {t._class === 'rental' && (
+                <select value={t.propertyId || (t._property ? `auto:${t._property}` : 'auto')}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTransactionProperty(t.id, v === 'auto' || v.startsWith('auto:') ? null : v);
+                  }}
+                  title="Rental property (Schedule E line)"
+                  className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${t.propertyId ? 'border-blue-500/60 text-blue-200' : 'border-slate-700 text-slate-400'}`}>
+                  <option value="auto">{t._property ? `auto: 🏠 ${PROPERTY_BY_ID[t._property]?.nickname || t._property}` : '— property —'}</option>
+                  {PROPERTIES.map(p => <option key={p.id} value={p.id}>🏠 {p.nickname}</option>)}
+                </select>
+              )}
               <select value={(t.category && t.category !== 'uncategorized') ? t.category : 'auto'} onChange={(e) => categorizeTransaction(t.id, e.target.value === 'auto' ? 'uncategorized' : e.target.value)}
                 className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${(t.category && t.category !== 'uncategorized') ? 'border-slate-700' : 'border-amber-600/50 text-slate-400'}`}>
                 <option value="auto">{sugCat ? `auto: ${sugCat.emoji} ${sugCat.label}` : 'Uncategorized'}</option>

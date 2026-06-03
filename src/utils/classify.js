@@ -1,5 +1,7 @@
-// Auto-classification for transactions: spending category + tax/ownership class + home-office flag.
+// Auto-classification for transactions: spending category + tax/ownership class + home-office flag + propertyId.
 // First matching rule wins (specific → general). Most everyday spend defaults to personal.
+import { classifyProperty } from '../data/properties';
+
 const has = (s, arr) => { const x = (s || '').toLowerCase(); return arr.some(k => x.includes(k)); };
 
 // kw: keywords to match in merchant/name. category: spending category id. klass: tax class
@@ -14,6 +16,11 @@ const RULES = [
   { kw: ['duke energy', 'piedmont natural', 'dominion energy', 'charlotte water', 'water/sewer'], category: 'utilities', homeOffice: true },
   { kw: ['spectrum', 'at&t', 'at and t', 'att*', 'attbill', 'verizon', 't-mobile', 'tmobile', 'xfinity', 'comcast', 'google fi'], category: 'utilities', homeOffice: true },
   { kw: ['governors court', 'hoa', 'homeowner', 'community assoc', 'cedar management', 'association dues', 'condo assoc', 'property mgmt'], category: 'housing', homeOffice: true },
+  // ---- RENTAL PROPERTY EXPENSES (Sch E) ----
+  // Mortgage servicer Rocket — disambiguated per-property in PROPERTY_RULES (data/properties.js).
+  { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], category: 'mortgage', klass: 'rental' },
+  // HOAs that are unambiguously rental-side (the personal-home HOA "governors court" is matched earlier).
+  { kw: ['magnolia place', 'green crest hoa', 'greencrest hoa', 'william douglas'], category: 'hoa', klass: 'rental' },
   // ---- COFFEE / DINING ----
   { kw: ['starbucks', 'dunkin', 'peet', 'caribou coffee', 'dutch bros', 'coffee'], category: 'dining' },
   { kw: ['mcdonald', 'chick-fil', 'chipotle', 'panera', 'subway', 'wendy', 'taco bell', 'burger', 'pizza', 'restaurant', 'grill', ' cafe', 'doordash', 'uber eats', 'ubereats', 'grubhub', 'tavern', 'bistro', 'kitchen', 'brewery', 'bar &', 'sushi', 'thai', 'mexican'], category: 'dining' },
@@ -40,22 +47,44 @@ const RULES = [
   { kw: ['service charge', 'monthly fee', 'atm fee', 'overdraft', 'interest charge', 'annual fee', 'wire fee', 'foreign transaction', 'late fee'], category: 'fees' },
 ];
 
-// Returns { category, klass, homeOffice, conf } or null. conf: 'high' (keyword) | 'review' (size-based).
+// Returns { category, klass, homeOffice, conf, propertyId } or null.
+// conf: 'high' (keyword) | 'review' (size-based).
 export function classify(txn, account) {
   const payee = `${txn.merchantName || ''} ${txn.name || ''}`;
   const inflow = (txn.amount || 0) < 0;
+  const propMatch = classifyProperty(txn);
   for (const r of RULES) {
     if (r.inflow && !inflow) continue;
-    if (has(payee, r.kw)) return { category: r.category, klass: r.klass || 'personal', homeOffice: !!r.homeOffice, conf: 'high' };
+    if (has(payee, r.kw)) {
+      return {
+        category: r.category,
+        klass: r.klass || 'personal',
+        homeOffice: !!r.homeOffice,
+        conf: 'high',
+        propertyId: propMatch?.propertyId || null,
+      };
+    }
   }
   // Size-based rent detection: inflow between $1400–$1800, not matched above → likely rent (review).
   const amt = Math.abs(txn.amount || 0);
-  if (inflow && amt >= 1400 && amt <= 1800) return { category: 'rental', klass: 'rental', homeOffice: false, conf: 'review' };
+  if (inflow && amt >= 1400 && amt <= 1800) {
+    return {
+      category: 'rental',
+      klass: 'rental',
+      homeOffice: false,
+      conf: 'review',
+      propertyId: propMatch?.propertyId || null,
+    };
+  }
   // Account-based class fallback (no category): Fifth Third → rental, business acct → business.
   const acct = `${account?.name || ''} ${txn.accountName || ''}`;
-  if (has(acct, ['fifth third', '5/3', '53 bank'])) return { category: null, klass: 'rental', homeOffice: false, conf: 'low' };
-  if (has(acct, ['business', 'biz'])) return { category: null, klass: 'business', homeOffice: false, conf: 'low' };
-  return null;
+  if (has(acct, ['fifth third', '5/3', '53 bank'])) {
+    return { category: null, klass: 'rental', homeOffice: false, conf: 'low', propertyId: propMatch?.propertyId || null };
+  }
+  if (has(acct, ['business', 'biz'])) {
+    return { category: null, klass: 'business', homeOffice: false, conf: 'low', propertyId: null };
+  }
+  return propMatch ? { category: null, klass: null, homeOffice: false, conf: 'low', propertyId: propMatch.propertyId } : null;
 }
 
 export function autoClass(txn, account) { const c = classify(txn, account); return c ? c.klass : null; }

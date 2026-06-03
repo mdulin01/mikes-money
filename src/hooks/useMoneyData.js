@@ -182,6 +182,12 @@ export function useMoneyData(user) {
     return updateDoc(ref, { txClass: txClass || null, classBy: txClass ? 'user' : null });
   }, []);
 
+  // Which rental property the txn belongs to (Schedule E line). null clears.
+  const setTransactionProperty = useCallback((txnId, propertyId) => {
+    const ref = doc(db, COLLECTIONS.TRANSACTIONS, txnId);
+    return updateDoc(ref, { propertyId: propertyId || null, propertyBy: propertyId ? 'user' : null });
+  }, []);
+
   // Bulk auto-categorize: assigns spending category (+ class + home-office flag) to every
   // uncategorized txn using the rules engine. High-confidence applied; size-detected rent
   // flagged needsReview; unmatched left uncategorized for manual review. Batched (Firestore 500 cap).
@@ -196,6 +202,7 @@ export function useMoneyData(user) {
         if (!c || !c.category) { skipped++; continue; }
         const upd = { category: c.category, categorizedBy: 'auto' };
         if (!t.txClass && c.klass) { upd.txClass = c.klass; upd.classBy = 'auto'; }
+        if (!t.propertyId && c.propertyId) { upd.propertyId = c.propertyId; upd.propertyBy = 'auto'; }
         if (c.homeOffice) upd.homeOffice = true;
         if (c.conf === 'review') { upd.needsReview = true; review++; }
         batch.update(doc(db, COLLECTIONS.TRANSACTIONS, t.id), upd);
@@ -290,6 +297,7 @@ export function useMoneyData(user) {
     toggleAccountIgnored,
     categorizeTransaction,
     setTransactionClass,
+    setTransactionProperty,
     autoCategorizeAll,
   };
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { money } from '../utils/format';
 import { effectiveClass } from '../utils/classify';
+import { PROPERTIES, effectiveProperty } from '../data/properties';
 
 // 2025 single-filer federal brackets (refine yearly). Std deduction single 2025 = 15000.
 const BRACKETS = [[0,0.10],[11925,0.12],[48475,0.22],[103350,0.24],[197300,0.32],[250525,0.35],[626350,0.37]];
@@ -48,16 +49,25 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
   const ytd = useMemo(() => {
     const cur = recentTxns.filter(t => (t.date || '').startsWith(String(year)));
     let bizInc = 0, bizExp = 0, rentInc = 0, rentExp = 0, splitExp = 0;
+    // Per-property Schedule E breakdown — keyed by propertyId. 'unassigned' bucket holds rental
+    // txns with no property tagged (a flag for "go fix this on Transactions page").
+    const perProperty = {};
+    const ensure = (id) => (perProperty[id] = perProperty[id] || { inc: 0, exp: 0 });
     for (const t of cur) {
       const c = effectiveClass(t, acctById); const a = t.amount || 0;
       if (c === 'business') { if (a < 0) bizInc += -a; else bizExp += a; }
       else if (c === 'work-travel') { if (a > 0) bizExp += a; }
-      else if (c === 'rental') { if (a < 0) rentInc += -a; else rentExp += a; }
+      else if (c === 'rental') {
+        if (a < 0) rentInc += -a; else rentExp += a;
+        const pid = effectiveProperty(t) || 'unassigned';
+        const bucket = ensure(pid);
+        if (a < 0) bucket.inc += -a; else bucket.exp += a;
+      }
       else if (c === 'split') { if (a > 0) splitExp += a; }
     }
     const schC = bizInc - bizExp - splitExp * 0.5;
     const schE = rentInc - rentExp - splitExp * 0.5;
-    return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE };
+    return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE, perProperty };
   }, [recentTxns, acctById, year]);
 
   const ann = monthsElapsed > 0 ? 12 / monthsElapsed : 1;
@@ -126,6 +136,43 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
           ))}
         </div>
         <div className="mt-3 text-sm">Projected total {money(proj.total)} − paid {money(paidFed + paidState)} = <span className="font-bold text-amber-300">{money(setAside)} to set aside</span> for the April balance.</div>
+      </section>
+
+      {/* Per-property Schedule E breakdown */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="font-semibold mb-1">🏠 Per-property Schedule E (YTD)</h2>
+        <p className="text-xs text-slate-400 mb-3">Each property is one Schedule E line. Tag rental transactions with a property on the Transactions page; untagged rental txns fall into 'Unassigned' below.</p>
+        {(() => {
+          const rows = PROPERTIES.filter(p => p.schedule === 'rental').map(p => {
+            const b = ytd.perProperty[p.id] || { inc: 0, exp: 0 };
+            return { id: p.id, nickname: p.nickname, inc: b.inc, exp: b.exp, net: b.inc - b.exp };
+          });
+          const ua = ytd.perProperty['unassigned'];
+          if (ua && (ua.inc || ua.exp)) rows.push({ id: 'unassigned', nickname: '⚠ Unassigned', inc: ua.inc, exp: ua.exp, net: ua.inc - ua.exp });
+          const totalInc = rows.reduce((s, r) => s + r.inc, 0);
+          const totalExp = rows.reduce((s, r) => s + r.exp, 0);
+          return (
+            <table className="w-full text-sm">
+              <thead><tr className="text-slate-500 text-xs"><th className="text-left">Property</th><th className="text-right">Rent</th><th className="text-right">Expenses</th><th className="text-right">Net</th></tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="border-t border-slate-700/60">
+                    <td className={`py-1.5 ${r.id === 'unassigned' ? 'text-orange-300' : ''}`}>{r.nickname}</td>
+                    <td className="text-right mono-nums text-emerald-300">{money(r.inc)}</td>
+                    <td className="text-right mono-nums text-slate-200">{money(r.exp)}</td>
+                    <td className={`text-right mono-nums font-bold ${r.net < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>{money(r.net)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-slate-600">
+                  <td className="py-1.5 font-semibold">Total Sch E</td>
+                  <td className="text-right mono-nums text-emerald-300">{money(totalInc)}</td>
+                  <td className="text-right mono-nums text-slate-200">{money(totalExp)}</td>
+                  <td className={`text-right mono-nums font-bold ${(totalInc - totalExp) < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>{money(totalInc - totalExp)}</td>
+                </tr>
+              </tbody>
+            </table>
+          );
+        })()}
       </section>
 
       {/* Assumptions (editable) */}
