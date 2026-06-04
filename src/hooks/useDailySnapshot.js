@@ -3,6 +3,8 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase-config';
 import { COLLECTIONS } from '../constants';
 import { toLocalDateStr, offsetDateStr } from '../utils/dateUtils';
+import { allocateHoldings, classifyHolding } from '../utils/assetClass';
+import { computeSectorTotals } from '../utils/sectorMap';
 
 /**
  * Writes a daily snapshot of all computed dashboard values to Firestore at
@@ -90,6 +92,19 @@ export function useDailySnapshot({
             type: a.type || null,
           }));
 
+        // Asset-class allocation snapshot (for over-time tracking + quarterly rebalance)
+        const allocation = allocateHoldings(holdings || []).map(a => ({
+          id: a.id, value: Math.round(a.value), pct: a.pct,
+        }));
+
+        // Stock-side sector mix snapshot
+        const { totals: secTotals, totalStock, diversifiedStock } = computeSectorTotals(holdings || [], classifyHolding);
+        const sectors = {
+          totalStock: Math.round(totalStock || 0),
+          diversifiedStock: Math.round(diversifiedStock || 0),
+          byS: Object.fromEntries(Object.entries(secTotals).map(([k, v]) => [k, Math.round(v)])),
+        };
+
         const payload = {
           date: dateStr,
           asOf: serverTimestamp(),
@@ -120,6 +135,10 @@ export function useDailySnapshot({
           // Investment concentration
           investmentsTotal: investmentsTotal ?? null,
           topHoldings,
+
+          // Allocation + sectors over time
+          allocation,
+          sectors,
 
           // Insights (the "This month" cards)
           insights: (insights || []).map(i => ({

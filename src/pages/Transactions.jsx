@@ -151,48 +151,54 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
         {filtered.map(t => {
           const sugCat = catById[t._sugCat];
           return (
-            <li key={t.id} className="px-4 py-3 flex items-center gap-3 text-sm">
-              <div className="flex-1 min-w-0">
-                <div className="truncate">{t.merchantName || t.name || '—'}{t.needsReview && <span title="size-detected — verify" className="ml-1 text-orange-400">⚑</span>}{t._homeOffice && <span title="home office (partial business)" className="ml-1 text-[10px] text-emerald-400">🏠 home office</span>}</div>
-                <div className="text-slate-500 text-xs">{humanDate(t.date)} · {t.accountName || t.accountId}</div>
+            <li key={t.id} className="px-4 py-3 text-sm">
+              {/* Top line: merchant + amount (amount stays right-aligned regardless of controls) */}
+              <div className="flex items-baseline gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{t.merchantName || t.name || '—'}{t.needsReview && <span title="size-detected — verify" className="ml-1 text-orange-400">⚑</span>}{t._homeOffice && <span title="home office (partial business)" className="ml-1 text-[10px] text-emerald-400">🏠 home office</span>}</div>
+                  <div className="text-slate-500 text-xs">{humanDate(t.date)} · {t.accountName || t.accountId}</div>
+                </div>
+                <div className={`mono-nums text-right whitespace-nowrap font-medium ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-100'}`}>{signedMoney(-t.amount, { cents: true })}</div>
               </div>
-              <select value={t.txClass || 'auto'} onChange={(e) => setTransactionClass(t.id, e.target.value === 'auto' ? null : e.target.value)}
-                className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${t.txClass ? 'border-blue-500/60 text-blue-200' : 'border-slate-700 text-slate-400'}`}>
-                <option value="auto">{t._class === 'uncategorized' ? '— class —' : `auto: ${CBYID[t._class]?.emoji || ''}`}</option>
-                {CLASSES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
-              </select>
-              {t._class === 'rental' && (
-                <select value={t.propertyId || (t._property ? `auto:${t._property}` : 'auto')}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setTransactionProperty(t.id, v === 'auto' || v.startsWith('auto:') ? null : v);
-                  }}
-                  title="Rental property (Schedule E line)"
-                  className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${t.propertyId ? 'border-blue-500/60 text-blue-200' : 'border-slate-700 text-slate-400'}`}>
-                  <option value="auto">{t._property ? `auto: 🏠 ${PROPERTY_BY_ID[t._property]?.nickname || t._property}` : '— property —'}</option>
-                  {PROPERTIES.map(p => <option key={p.id} value={p.id}>🏠 {p.nickname}</option>)}
+              {/* Second line: tagging controls wrap freely */}
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <select value={t.txClass || 'auto'} onChange={(e) => setTransactionClass(t.id, e.target.value === 'auto' ? null : e.target.value)}
+                  className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${t.txClass ? 'border-blue-500/60 text-blue-200' : 'border-slate-700 text-slate-400'}`}>
+                  <option value="auto">{t._class === 'uncategorized' ? '— class —' : `auto: ${CBYID[t._class]?.emoji || ''} ${CBYID[t._class]?.label || ''}`}</option>
+                  {CLASSES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
                 </select>
-              )}
-              <select value={(t.category && t.category !== 'uncategorized') ? t.category : 'auto'} onChange={(e) => categorizeTransaction(t.id, e.target.value === 'auto' ? 'uncategorized' : e.target.value)}
-                className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${(t.category && t.category !== 'uncategorized') ? 'border-slate-700' : 'border-amber-600/50 text-slate-400'}`}>
-                <option value="auto">{sugCat ? `auto: ${sugCat.emoji} ${sugCat.label}` : 'Uncategorized'}</option>
-                {catsByKind.income.length > 0 && (<optgroup label="Income">{catsByKind.income.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
-                {catsByKind.expense.length > 0 && (<optgroup label="Expenses">{catsByKind.expense.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
-                {catsByKind.transfer.length > 0 && (<optgroup label="Transfer">{catsByKind.transfer.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
-              </select>
-              {(() => {
-                const hasManual = t.categorizedBy === 'user' || t.classBy === 'user' || t.propertyBy === 'user';
-                if (!hasManual || isCoveredByRule(t)) return null;
-                const n = similarCount(t);
-                return (
-                  <button onClick={() => learnRule(t)}
-                    title={`Save '${merchantKeyword(t)}' as a rule and apply to ${n} other matching transaction${n === 1 ? '' : 's'}`}
-                    className="text-xs px-2 py-1 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/40">
-                    ✨ Save{n > 0 ? ` +${n}` : ''}
-                  </button>
-                );
-              })()}
-              <div className={`mono-nums w-24 text-right ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-100'}`}>{signedMoney(-t.amount, { cents: true })}</div>
+                {t._class === 'rental' && (
+                  <select value={t.propertyId || (t._property ? `auto:${t._property}` : 'auto')}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTransactionProperty(t.id, v === 'auto' || v.startsWith('auto:') ? null : v);
+                    }}
+                    title="Rental property (Schedule E line)"
+                    className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${t.propertyId ? 'border-blue-500/60 text-blue-200' : 'border-slate-700 text-slate-400'}`}>
+                    <option value="auto">{t._property ? `auto: 🏠 ${PROPERTY_BY_ID[t._property]?.nickname || t._property}` : '— property —'}</option>
+                    {PROPERTIES.map(p => <option key={p.id} value={p.id}>🏠 {p.nickname}</option>)}
+                  </select>
+                )}
+                <select value={(t.category && t.category !== 'uncategorized') ? t.category : 'auto'} onChange={(e) => categorizeTransaction(t.id, e.target.value === 'auto' ? 'uncategorized' : e.target.value)}
+                  className={`bg-slate-900 border rounded-lg px-2 py-1 text-xs ${(t.category && t.category !== 'uncategorized') ? 'border-slate-700' : 'border-amber-600/50 text-slate-400'}`}>
+                  <option value="auto">{sugCat ? `auto: ${sugCat.emoji} ${sugCat.label}` : 'Uncategorized'}</option>
+                  {catsByKind.income.length > 0 && (<optgroup label="Income">{catsByKind.income.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
+                  {catsByKind.expense.length > 0 && (<optgroup label="Expenses">{catsByKind.expense.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
+                  {catsByKind.transfer.length > 0 && (<optgroup label="Transfer">{catsByKind.transfer.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}</optgroup>)}
+                </select>
+                {(() => {
+                  const hasManual = t.categorizedBy === 'user' || t.classBy === 'user' || t.propertyBy === 'user';
+                  if (!hasManual || isCoveredByRule(t)) return null;
+                  const n = similarCount(t);
+                  return (
+                    <button onClick={() => learnRule(t)}
+                      title={`Save '${merchantKeyword(t)}' as a rule and apply to ${n} other matching transaction${n === 1 ? '' : 's'}`}
+                      className="text-xs px-2 py-1 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/40">
+                      ✨ Save{n > 0 ? ` +${n}` : ''}
+                    </button>
+                  );
+                })()}
+              </div>
             </li>
           );
         })}

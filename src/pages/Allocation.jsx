@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Area, Line, ReferenceLine, LabelList } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, AreaChart, Area, Line, ReferenceLine, LabelList, Treemap } from 'recharts';
 
 // Shared chart theming
 const CHART_BG = '#0f172a';
@@ -17,11 +17,28 @@ const TOOLTIP_ITEM = { color: '#e2e8f0', padding: 0 };
 const TOOLTIP_LABEL = { color: '#94a3b8', marginBottom: 4, fontSize: 11 };
 import { money, pct } from '../utils/format';
 import { ASSET_CLASSES, classifyHolding, allocateHoldings, targetAllocation } from '../utils/assetClass';
+import { computeSectorTotals } from '../utils/sectorMap';
 import { simulate } from '../utils/monteCarlo';
 import { computeAge } from '../utils/dateUtils';
 import { USER_PROFILE } from '../constants';
 
 const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
+
+// Sector palette (roughly mirrors Empower's sector view)
+const SECTOR_COLORS = {
+  Technology: '#f5c518',
+  'Communication Services': '#1565c0',
+  'Consumer Cyclical': '#7b1fa2',
+  'Consumer Defensive': '#ef6c00',
+  'Financial Services': '#8bc34a',
+  Healthcare: '#ec407a',
+  Industrials: '#1f2937',
+  Energy: '#e53935',
+  Utilities: '#5e35b1',
+  'Basic Materials': '#26c6da',
+  'Real Estate': '#f59e0b',
+  Diversified: '#64748b',
+};
 
 // Preset allocation scenarios (stock / bond split)
 const PRESETS = [
@@ -33,7 +50,7 @@ const PRESETS = [
   { id: 'defensive',    label: 'Defensive',    stockPct: 0.40, bondPct: 0.60, description: '40/60 — late retirement' },
 ];
 
-export default function Allocation({ holdings, investmentsTotal, data, netWorth }) {
+export default function Allocation({ holdings, investmentsTotal, data, netWorth, snapshotHistory = [] }) {
   // Default years-to-retirement computed from your age + planned retirement age.
   // Falls back to a saved preference if present, otherwise computes live.
   const defaultYTR = Math.max(
@@ -231,6 +248,12 @@ export default function Allocation({ holdings, investmentsTotal, data, netWorth 
               ))}
             </ul>
           </section>
+
+          <SectorBreakdown holdings={holdings} snapshotHistory={snapshotHistory} />
+
+          <RebalancePanel allocation={allocation} target={target} investmentsTotal={investmentsTotal} />
+
+          <AllocationOverTime snapshotHistory={snapshotHistory} />
 
           {/* Monte Carlo across allocation scenarios */}
           {scenarios ? (
@@ -502,5 +525,208 @@ function StatMini({ label, value, tone }) {
       <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
       <div className={`mono-nums font-medium ${tone}`}>{value}</div>
     </div>
+  );
+}
+
+
+/* -------------------- Sector breakdown (Empower-style) -------------------- */
+
+function SectorCell(props) {
+  const { x, y, width, height, name, value, total, root } = props;
+  if (!name || width <= 0 || height <= 0) return null;
+  const denom = total || root?.value || 0;
+  const p = denom ? value / denom : 0;
+  const color = SECTOR_COLORS[name] || '#64748b';
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={color} stroke="#0f172a" strokeWidth={2} />
+      {width > 54 && height > 22 && (
+        <text x={x + 6} y={y + 16} fill="#fff" fontSize={11} fontWeight={600}>{name}</text>
+      )}
+      {width > 54 && height > 38 && (
+        <text x={x + 6} y={y + 31} fill="#fff" fontSize={10} opacity={0.85}>{(p * 100).toFixed(1)}%</text>
+      )}
+    </g>
+  );
+}
+
+function SectorBreakdown({ holdings, snapshotHistory }) {
+  const { rows, classified, diversifiedStock, totalStock } = useMemo(() => {
+    const { totals, totalStock, diversifiedStock } = computeSectorTotals(holdings, classifyHolding);
+    const rows = Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    const classified = rows.reduce((s, r) => s + r.value, 0);
+    return { rows, classified, diversifiedStock, totalStock };
+  }, [holdings]);
+
+  // 90-day drift: find the snapshot closest to ~90 days ago that has sector data.
+  const priorMix = useMemo(() => {
+    const hist = (snapshotHistory || []).filter(h => h.sectors && h.sectors.byS);
+    if (hist.length < 2) return null;
+    const target = new Date(); target.setDate(target.getDate() - 90);
+    const targetStr = target.toISOString().slice(0, 10);
+    const onOrBefore = hist.filter(h => h.date <= targetStr);
+    const ref = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : hist[0];
+    const byS = ref.sectors.byS || {};
+    const denom = Object.values(byS).reduce((s, v) => s + v, 0) || 0;
+    if (!denom) return null;
+    const pcts = {}; for (const [k, v] of Object.entries(byS)) pcts[k] = v / denom;
+    return { date: ref.date, pcts };
+  }, [snapshotHistory]);
+
+  if (!totalStock || rows.length === 0) {
+    return (
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Stock sectors</h2>
+        <p className="text-sm text-slate-400">No mapped single-sector or thematic funds yet — your holdings are all broadly diversified, so sector tilt isn't shown.</p>
+      </section>
+    );
+  }
+
+  const treeData = rows.map(r => ({ name: r.name, value: Math.round(r.value) }));
+
+  return (
+    <section className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-300">Stock sectors</h2>
+        <p className="text-xs text-slate-500">
+          Sector tilt from your mapped funds ({pct(classified / totalStock, 0)} of stock is sector-mapped; the rest is broad/diversified).
+          {priorMix && <span> Δ columns compare to {priorMix.date}.</span>}
+        </p>
+      </div>
+
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <Treemap data={treeData} dataKey="value" stroke="#0f172a" isAnimationActive={false}
+            content={<SectorCell total={classified} />} />
+        </ResponsiveContainer>
+      </div>
+
+      <ul className="divide-y divide-slate-700/60 text-sm">
+        {rows.map(r => {
+          const p = classified ? r.value / classified : 0;
+          const prior = priorMix?.pcts?.[r.name];
+          const drift = prior != null ? p - prior : null;
+          return (
+            <li key={r.name} className="py-2 flex items-center">
+              <span className="w-3 h-3 rounded-sm mr-3" style={{ background: SECTOR_COLORS[r.name] || '#64748b' }} />
+              <span className="flex-1 text-slate-200">{r.name}</span>
+              {drift != null && (
+                <span className={`mono-nums text-xs w-16 text-right ${Math.abs(drift) < 0.01 ? 'text-slate-500' : drift > 0 ? 'text-emerald-400' : 'text-sky-400'}`}>
+                  {drift > 0 ? '+' : ''}{pct(drift)}
+                </span>
+              )}
+              <span className="mono-nums text-slate-400 w-16 text-right">{pct(p)}</span>
+              <span className="mono-nums w-28 text-right">{money(r.value)}</span>
+            </li>
+          );
+        })}
+        {diversifiedStock > 0 && (
+          <li className="py-2 flex items-center text-slate-500">
+            <span className="w-3 h-3 rounded-sm mr-3" style={{ background: SECTOR_COLORS.Diversified }} />
+            <span className="flex-1">Diversified (broad funds)</span>
+            <span className="mono-nums w-28 text-right ml-auto">{money(diversifiedStock)}</span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+/* -------------------- Quarterly rebalance panel -------------------- */
+
+function RebalancePanel({ allocation, target, investmentsTotal }) {
+  if (!investmentsTotal) return null;
+  const rows = ASSET_CLASSES
+    .filter(c => allocation.find(a => a.id === c.id) || target[c.id] != null)
+    .map(c => {
+      const cur = allocation.find(a => a.id === c.id);
+      const curVal = cur?.value || 0;
+      const curPct = cur?.pct || 0;
+      const tgtPct = target[c.id]; // may be undefined for satellite classes
+      const hasTarget = tgtPct != null;
+      const tgtVal = hasTarget ? tgtPct * investmentsTotal : null;
+      const move = hasTarget ? tgtVal - curVal : null;
+      return { c, curVal, curPct, tgtPct, hasTarget, move };
+    });
+  const maxMove = Math.max(1, ...rows.filter(r => r.hasTarget).map(r => Math.abs(r.move)));
+  const needsWork = rows.some(r => r.hasTarget && Math.abs(r.curPct - r.tgtPct) > 0.05);
+
+  return (
+    <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-slate-300">Rebalance to target</h2>
+        <span className={`text-xs px-2 py-0.5 rounded ${needsWork ? 'bg-amber-900/50 text-amber-300' : 'bg-emerald-900/50 text-emerald-300'}`}>
+          {needsWork ? 'drift > 5%' : 'on target'}
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Dollar moves to bring the stock/bond/cash sleeve back to the glide-path target. Real-estate, alternatives &amp; crypto are treated as satellites (no target). Review each quarter.
+      </p>
+      <ul className="space-y-2 text-sm">
+        {rows.map(({ c, curVal, curPct, tgtPct, hasTarget, move }) => (
+          <li key={c.id} className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />
+            <span className="flex-1 text-slate-200">{c.label}</span>
+            <span className="mono-nums text-slate-300 w-14 text-right">{pct(curPct)}</span>
+            <span className="text-slate-500 text-xs w-16 text-right">/ {hasTarget ? pct(tgtPct) : '—'}</span>
+            <span className="w-28 text-right">
+              {hasTarget
+                ? <span className={`mono-nums text-xs ${Math.abs(move) < investmentsTotal * 0.01 ? 'text-slate-500' : move > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{move > 0 ? 'buy ' : 'sell '}{money(Math.abs(move))}</span>
+                : <span className="text-slate-600 text-xs">satellite</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/* -------------------- Allocation over time -------------------- */
+
+function AllocationOverTime({ snapshotHistory }) {
+  const data = useMemo(() => (snapshotHistory || [])
+    .filter(s => Array.isArray(s.allocation) && s.allocation.length)
+    .map(s => {
+      const tot = s.allocation.reduce((a, b) => a + (b.value || 0), 0) || 1;
+      const row = { date: s.date };
+      for (const a of s.allocation) row[a.id] = (a.value || 0) / tot;
+      return row;
+    }), [snapshotHistory]);
+
+  const seen = useMemo(() => {
+    const set = new Set();
+    for (const r of data) for (const k of Object.keys(r)) if (k !== 'date') set.add(k);
+    return ASSET_CLASSES.filter(c => set.has(c.id));
+  }, [data]);
+
+  if (data.length < 2) {
+    return (
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Allocation over time</h2>
+        <p className="text-sm text-slate-400">History accumulates one point per day you open the app. Come back after a few sessions to see how your mix drifts — useful for the quarterly rebalance.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <h2 className="text-sm font-semibold text-slate-300 mb-3">Allocation over time</h2>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 5, right: 16, left: 0, bottom: 5 }} stackOffset="expand">
+            <CartesianGrid strokeDasharray="2 4" stroke={GRID_STROKE} vertical={false} />
+            <XAxis dataKey="date" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 10 }} tickLine={{ stroke: AXIS_COLOR }} axisLine={{ stroke: '#334155' }} minTickGap={40} />
+            <YAxis stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 10 }} tickLine={{ stroke: AXIS_COLOR }} axisLine={{ stroke: '#334155' }} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={40} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM} labelStyle={TOOLTIP_LABEL}
+              formatter={(v, k) => [pct(v), ASSET_CLASSES.find(c => c.id === k)?.label || k]} />
+            {seen.map(c => (
+              <Area key={c.id} type="monotone" dataKey={c.id} stackId="a" stroke={c.color} fill={c.color} fillOpacity={0.85} />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
   );
 }

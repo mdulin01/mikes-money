@@ -32,9 +32,18 @@ export const SECTOR_MAP = {
   VNQI:  { 'Real Estate': 1.0 },
   SCHH:  { 'Real Estate': 1.0 },
   IYR:   { 'Real Estate': 1.0 },
-  // Thematic / concentrated ETFs
-  TAN:   { Utilities: 0.5, Industrials: 0.3, Technology: 0.2 }, // solar — split
-  ICLN:  { Utilities: 0.6, Industrials: 0.3, Technology: 0.1 },
+  // Thematic / concentrated ETFs (rough sector splits — approximations)
+  TAN:   { Utilities: 0.5, Industrials: 0.3, Technology: 0.2 }, // solar
+  ICLN:  { Utilities: 0.52, Industrials: 0.27, Technology: 0.18, 'Basic Materials': 0.03 }, // clean energy
+  QCLN:  { Technology: 0.4, 'Consumer Cyclical': 0.25, Industrials: 0.2, Utilities: 0.15 },
+  BOTZ:  { Industrials: 0.43, Technology: 0.42, Healthcare: 0.1, 'Consumer Cyclical': 0.05 }, // robotics & AI
+  ROBO:  { Industrials: 0.45, Technology: 0.45, Healthcare: 0.1 },
+  ARKQ:  { Technology: 0.35, Industrials: 0.30, 'Consumer Cyclical': 0.25, 'Communication Services': 0.10 },
+  AIQ:   { Technology: 0.60, 'Communication Services': 0.28, 'Consumer Cyclical': 0.12 }, // AI & big data
+  IRBO:  { Technology: 0.50, Industrials: 0.20, 'Communication Services': 0.15, 'Consumer Cyclical': 0.10, Healthcare: 0.05 },
+  DRIV:  { Technology: 0.38, 'Consumer Cyclical': 0.28, Industrials: 0.19, 'Basic Materials': 0.15 }, // autonomous & EV
+  IDRV:  { 'Consumer Cyclical': 0.35, Technology: 0.35, Industrials: 0.20, 'Basic Materials': 0.10 },
+  KARS:  { 'Consumer Cyclical': 0.45, Industrials: 0.20, 'Basic Materials': 0.20, Technology: 0.15 },
   // Tech-heavy but diversified
   QQQ:   { Technology: 0.55, 'Communication Services': 0.18, 'Consumer Cyclical': 0.15,
            Healthcare: 0.06, Industrials: 0.03, 'Consumer Defensive': 0.03 },

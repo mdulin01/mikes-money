@@ -52,6 +52,12 @@ const TICKER_MAP = {
   IBIT: 'crypto', FBTC: 'crypto', GBTC: 'crypto', ETHE: 'crypto', BITO: 'crypto',
   // TIAA CREF Social Choice is ~60/40 blended — classify as us_stock as rough approximation
   QSCCFX: 'us_stock',
+  // ESG core (held in most accounts)
+  ESGV: 'us_stock', VSGX: 'intl_stock',
+  // Thematic tilt — AI/robotics, EV/autonomous, clean energy (global equity; mapped us_stock by convention)
+  BOTZ: 'us_stock', DRIV: 'us_stock', ICLN: 'us_stock',
+  // Other thematic tickers (mapped so they classify if added later)
+  AIQ: 'us_stock', IRBO: 'us_stock', QCLN: 'us_stock', IDRV: 'us_stock', KARS: 'us_stock', ROBO: 'us_stock', ARKQ: 'us_stock',
 };
 
 export function classifyHolding(h) {

@@ -32,6 +32,7 @@ export function useMoneyData(user) {
   const [holdings, setHoldings] = useState([]);
   const [liabilities, setLiabilities] = useState([]);
   const [netWorthHistory, setNetWorthHistory] = useState([]);
+  const [snapshotHistory, setSnapshotHistory] = useState([]);
 
   // Main config doc (single-user)
   useEffect(() => {
@@ -100,6 +101,16 @@ export function useMoneyData(user) {
     const unsub = onSnapshot(q, (snap) => {
       setNetWorthHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => console.error('netWorthHistory listener error:', err));
+    return unsub;
+  }, [user?.uid]);
+
+  // Dashboard snapshots (used for allocation/sector over-time + quarterly rebalance review)
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, COLLECTIONS.DASHBOARD_SNAPSHOTS), orderBy('date', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setSnapshotHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('snapshotHistory listener error:', err));
     return unsub;
   }, [user?.uid]);
 
@@ -344,6 +355,7 @@ export function useMoneyData(user) {
     plaidHoldings: visibleHoldings,
     liabilities,
     netWorthHistory,
+    snapshotHistory,
     netWorth,
     investmentsTotal,
     currentMonthSpend,
