@@ -5,6 +5,7 @@ import { ToastProvider } from './components/Toast';
 import LoginScreen from './components/LoginScreen';
 import LoadingScreen from './components/LoadingScreen';
 import Nav from './components/Nav';
+import RefreshControl from './components/RefreshControl';
 import Footer from './components/Footer';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
@@ -31,6 +32,7 @@ export default function App() {
       <ToastProvider>
         <div className="min-h-screen bg-slate-900 pb-20 md:pb-0">
           <Nav onLogout={logout} />
+          <RefreshControl asOf={money.dataAsOf} refreshing={money.refreshing} onRefresh={money.refreshData}>
           <Routes>
             <Route path="/" element={<Dashboard {...money} />} />
             <Route path="/accounts" element={<Accounts {...money} />} />
@@ -45,6 +47,7 @@ export default function App() {
             <Route path="/scenarios" element={<Scenarios {...money} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </RefreshControl>
           <Footer />
         </div>
       </ToastProvider>

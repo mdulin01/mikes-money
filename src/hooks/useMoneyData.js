@@ -1,10 +1,11 @@
 import { classify } from '../utils/classify';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  doc, setDoc, onSnapshot, deleteField,
+  doc, setDoc, onSnapshot, deleteField, getDocs,
   collection, query, where, orderBy, limit, updateDoc, writeBatch,
 } from 'firebase/firestore';
-import { db } from '../firebase-config';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase-config';
 import { COLLECTIONS, USER_DOC_ID, DEFAULT_CATEGORIES } from '../constants';
 import { toLocalMonthStr } from '../utils/dateUtils';
 
@@ -33,6 +34,7 @@ export function useMoneyData(user) {
   const [liabilities, setLiabilities] = useState([]);
   const [netWorthHistory, setNetWorthHistory] = useState([]);
   const [snapshotHistory, setSnapshotHistory] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Main config doc (single-user)
   useEffect(() => {
@@ -120,6 +122,38 @@ export function useMoneyData(user) {
     const ref = doc(db, COLLECTIONS.FINANCE_DATA, USER_DOC_ID);
     return setDoc(ref, stripUndefined(patch), { merge: true });
   }, []);
+
+  // Freshest underlying-data timestamp across synced collections — the "as of" indicator.
+  const dataAsOf = useMemo(() => {
+    let max = 0;
+    const scan = (arr) => {
+      for (const x of arr || []) {
+        const ts = x.updatedAt?.toMillis?.() ?? (x.updatedAt ? new Date(x.updatedAt).getTime() : 0);
+        if (ts > max) max = ts;
+      }
+    };
+    scan(accounts); scan(holdings); scan(liabilities);
+    return max || null;
+  }, [accounts, holdings, liabilities]);
+
+  // On-demand Plaid pull: sync every linked institution. The realtime Firestore
+  // listeners then surface the fresh accounts/holdings/transactions automatically.
+  const refreshData = useCallback(async () => {
+    if (refreshing) return { ok: 0, failed: 0, total: 0, busy: true };
+    setRefreshing(true);
+    try {
+      const itemsSnap = await getDocs(collection(db, COLLECTIONS.PLAID_ITEMS));
+      const sync = httpsCallable(functions, 'syncItem');
+      const results = await Promise.allSettled(itemsSnap.docs.map(d => sync({ itemId: d.id })));
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      return { ok, failed: results.length - ok, total: results.length };
+    } catch (e) {
+      console.error('refreshData failed:', e);
+      return { ok: 0, failed: 1, total: 1, error: e?.message };
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
 
   const setBudget = useCallback((monthStr, categoryId, amount) => {
     return updateConfig({ budgets: { [monthStr]: { [categoryId]: amount } } });
@@ -356,6 +390,9 @@ export function useMoneyData(user) {
     liabilities,
     netWorthHistory,
     snapshotHistory,
+    dataAsOf,
+    refreshing,
+    refreshData,
     netWorth,
     investmentsTotal,
     currentMonthSpend,

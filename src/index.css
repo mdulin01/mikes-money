@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+html, body {
+  /* Use our in-app pull-to-refresh instead of the browser's native reload. */
+  overscroll-behavior-y: contain;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
