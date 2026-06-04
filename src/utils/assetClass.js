@@ -62,6 +62,35 @@ const TICKER_MAP = {
   AIQ: 'us_stock', IRBO: 'us_stock', QCLN: 'us_stock', IDRV: 'us_stock', KARS: 'us_stock', ROBO: 'us_stock', ARKQ: 'us_stock',
 };
 
+// Funds that span multiple asset classes (balanced / target-date / allocation funds).
+// Fractions should sum to ~1.0. allocateHoldings distributes the position across these
+// classes; everything not listed here is treated as a single class via classifyHolding.
+export const ASSET_SPLITS = {
+  QSCCFX: { us_stock: 0.60, us_bond: 0.40 }, // CREF Responsible Balanced — ~60/40
+  // Common balanced / income funds (split if ever held)
+  VBIAX:  { us_stock: 0.60, us_bond: 0.40 }, // Vanguard Balanced Index
+  VWELX:  { us_stock: 0.65, us_bond: 0.35 }, // Vanguard Wellington
+  VWINX:  { us_stock: 0.35, us_bond: 0.65 }, // Vanguard Wellesley Income
+  VTWNX:  { us_stock: 0.55, intl_stock: 0.35, us_bond: 0.10 }, // Target Retirement 2020 (rough)
+};
+
+const EQUITY_CLASSES = new Set(['us_stock', 'intl_stock', 'real_estate']);
+
+// Returns [{ cls, fraction }] for a holding. Split funds expand into multiple rows;
+// everything else is a single { cls, fraction: 1 }.
+export function classifyHoldingSplit(h) {
+  const t = (h.ticker || '').toUpperCase().trim();
+  const split = ASSET_SPLITS[t];
+  if (split) return Object.entries(split).map(([cls, fraction]) => ({ cls, fraction }));
+  return [{ cls: classifyHolding(h), fraction: 1 }];
+}
+
+// Fraction of a holding that is equity-like (stock/REIT) — used to weight sector math
+// so balanced funds only count their stock sleeve toward sector totals.
+export function equityFraction(h) {
+  return classifyHoldingSplit(h).reduce((sum, p) => sum + (EQUITY_CLASSES.has(p.cls) ? p.fraction : 0), 0);
+}
+
 export function classifyHolding(h) {
   const t = (h.ticker || '').toUpperCase().trim();
   if (TICKER_MAP[t]) return TICKER_MAP[t];
@@ -90,9 +119,10 @@ export function allocateHoldings(holdings) {
   const totals = {};
   let total = 0;
   for (const h of holdings) {
-    const cls = classifyHolding(h);
     const v = h.institutionValue || 0;
-    totals[cls] = (totals[cls] || 0) + v;
+    for (const { cls, fraction } of classifyHoldingSplit(h)) {
+      totals[cls] = (totals[cls] || 0) + v * fraction;
+    }
     total += v;
   }
   return ASSET_CLASSES.map(c => ({

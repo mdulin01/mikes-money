@@ -2,6 +2,8 @@
 // Use for stock-side sector concentration checks (rough approximations).
 // "Diversified" funds don't need entries here — they fall through as diversified.
 
+import { equityFraction } from './assetClass';
+
 export const SECTOR_MAP = {
   // Pure single-sector funds
   VITAX: { Technology: 1.0 },
@@ -62,7 +64,9 @@ export function computeSectorTotals(holdings, classifyFn) {
     const cls = classifyFn(h);
     // Only count equity-type classes
     if (cls !== 'us_stock' && cls !== 'intl_stock' && cls !== 'real_estate') continue;
-    const value = h.institutionValue || 0;
+    // Weight by the equity fraction so balanced funds only contribute their stock sleeve.
+    const value = (h.institutionValue || 0) * equityFraction(h);
+    if (value <= 0) continue;
     totalStock += value;
     const ticker = (h.ticker || '').toUpperCase();
     const map = SECTOR_MAP[ticker];
