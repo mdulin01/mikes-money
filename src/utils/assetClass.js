@@ -54,6 +54,8 @@ const TICKER_MAP = {
   QSCCFX: 'us_stock',
   // ESG core (held in most accounts)
   ESGV: 'us_stock', VSGX: 'intl_stock',
+  // TIAA: Vanguard FTSE Social Index (US large/mid-cap) — diversified, so no sector entry
+  VFTNX: 'us_stock',
   // Thematic tilt — AI/robotics, EV/autonomous, clean energy (global equity; mapped us_stock by convention)
   BOTZ: 'us_stock', DRIV: 'us_stock', ICLN: 'us_stock',
   // Other thematic tickers (mapped so they classify if added later)
