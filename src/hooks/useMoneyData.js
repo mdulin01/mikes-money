@@ -44,7 +44,12 @@ export function useMoneyData(user) {
       const snapData = snap.data() || {};
       // Merge defaults without clobbering user arrays
       const merged = { ...DEFAULT_DATA, ...snapData };
-      if (!snapData.categories?.length) merged.categories = DEFAULT_CATEGORIES;
+      // Categories: keep the user's saved list + order, but append any newly-shipped
+      // default categories the saved list doesn't have yet (matched by id).
+      const userCats = snapData.categories?.length ? snapData.categories : DEFAULT_CATEGORIES;
+      const haveIds = new Set(userCats.map(c => c.id));
+      const missingDefaults = DEFAULT_CATEGORIES.filter(c => !haveIds.has(c.id));
+      merged.categories = missingDefaults.length ? [...userCats, ...missingDefaults] : userCats;
       setData(merged);
       setLoading(false);
     }, (err) => {

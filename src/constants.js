@@ -65,6 +65,8 @@ export const DEFAULT_CATEGORIES = [
   { id: 'mortgage',      label: 'Mortgage / Interest', emoji: '🏦', kind: 'expense' },
   { id: 'hoa',           label: 'HOA / Dues',     emoji: '🏘️', kind: 'expense' },
   { id: 'maintenance',   label: 'Maintenance / Repairs', emoji: '🔧', kind: 'expense' },
+  { id: 'prof-dev',      label: 'Professional Development', emoji: '🎓', kind: 'expense' },
+  { id: 'licensing',     label: 'Licensing / Credentials', emoji: '🪪', kind: 'expense' },
   { id: 'other-exp',     label: 'Other',          emoji: '📦', kind: 'expense' },
   { id: 'salary',        label: 'Salary',         emoji: '💰', kind: 'income' },
   { id: 'rental',        label: 'Rental Income',  emoji: '🏘️', kind: 'income' },
