@@ -176,6 +176,75 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
         })()}
       </section>
 
+      {/* Reconcile vs rainbow-rentals */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="font-semibold mb-1">⚖️ Reconcile vs rainbow-rentals (YTD)</h2>
+        <p className="text-xs text-slate-400 mb-3">
+          mikes-money and rainbow-rentals keep the books for these properties independently (separate Firebase projects), so they should agree.
+          Open rainbow-rentals &rarr; Dashboard &rarr; YTD and type each property's <span className="text-emerald-300">Income</span> and <span className="text-rose-300">Total Exp</span> below.
+          A row turns green when the two systems match within $25.
+        </p>
+        {(() => {
+          const rr = data?.rrReconcile || {};
+          const TOL = 25;
+          const saveRR = (pid, field, val) =>
+            updateConfig({ rrReconcile: { ...rr, [pid]: { ...(rr[pid] || {}), [field]: Number(val) || 0 } } });
+          const rows = PROPERTIES.filter(p => p.schedule === 'rental').map(p => {
+            const mm = ytd.perProperty[p.id] || { inc: 0, exp: 0 };
+            const r = rr[p.id] || {};
+            const hasRR = r.rent != null || r.exp != null;
+            const incD = (r.rent || 0) - mm.inc;
+            const expD = (r.exp || 0) - mm.exp;
+            const ok = hasRR && Math.abs(incD) <= TOL && Math.abs(expD) <= TOL;
+            return { p, mm, r, hasRR, incD, expD, ok };
+          });
+          const fmtD = (d) => d === 0 ? '—' : `${d < 0 ? '-' : '+'}${money(Math.abs(d))}`;
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500">
+                    <th className="text-left py-1">Property</th>
+                    <th className="text-right">MM rent</th>
+                    <th className="text-right">RR rent</th>
+                    <th className="text-right">MM exp</th>
+                    <th className="text-right">RR exp</th>
+                    <th className="text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ p, mm, r, hasRR, incD, expD, ok }) => (
+                    <tr key={p.id} className="border-t border-slate-700/60">
+                      <td className="py-1.5 whitespace-nowrap">{p.nickname}</td>
+                      <td className="text-right mono-nums text-emerald-300">{money(mm.inc)}</td>
+                      <td className="text-right">
+                        <input type="number" defaultValue={r.rent ?? ''} placeholder="—"
+                          onBlur={e => saveRR(p.id, 'rent', e.target.value)}
+                          className="w-20 bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="text-right mono-nums text-slate-200">{money(mm.exp)}</td>
+                      <td className="text-right">
+                        <input type="number" defaultValue={r.exp ?? ''} placeholder="—"
+                          onBlur={e => saveRR(p.id, 'exp', e.target.value)}
+                          className="w-20 bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="text-right whitespace-nowrap">
+                        {!hasRR ? <span className="text-slate-600">—</span>
+                          : ok ? <span className="text-emerald-400">✓ match</span>
+                          : <span className="text-amber-300" title={`rent ${fmtD(incD)} · exp ${fmtD(expD)}`}>⚠ rent {fmtD(incD)} / exp {fmtD(expD)}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-slate-500 mt-2">
+                MM = this app's class-tagged transactions. Deltas are RR &minus; MM: a positive rent delta means rainbow-rentals booked more rent than mikes-money has tagged (likely an untagged or miscategorized transaction here); a positive exp delta means an expense logged in rainbow-rentals that hasn't landed (or isn't tagged rental) here.
+              </p>
+            </div>
+          );
+        })()}
+      </section>
+
       {/* Assumptions (editable) */}
       <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <h2 className="font-semibold mb-2 text-sm">Assumptions</h2>
