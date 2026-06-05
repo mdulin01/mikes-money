@@ -33,8 +33,10 @@ const RULES = [
   { kw: ['netflix', 'spotify', 'hulu', 'disney+', 'disney plus', 'hbo', 'max.com', 'apple.com/bill', 'itunes', 'google one', 'google *', 'amazon prime', 'prime video', 'youtube premium', 'adobe', 'dropbox', 'microsoft', 'openai', 'chatgpt', 'anthropic', 'claude.ai', 'notion', 'github', 'vercel', 'godaddy', 'squarespace', 'audible', 'patreon', 'substack'], category: 'subscriptions' },
   // ---- HEALTH ----
   { kw: ['cvs', 'walgreens', 'rite aid', 'pharmacy', 'quest diag', 'labcorp', 'novant', 'atrium health', 'one medical', 'dental', 'dentist', 'optometr', 'vision center', 'orthodont'], category: 'health' },
-  // ---- LICENSURE / CME (business) ----
-  { kw: ['dea ', 'drug enforcement', 'medical board', 'board of medical', 'licensure', 'abim', 'abms', 'american academy', 'cme ', 'board certif', 'credential', 'nc medical'], category: 'other-exp', klass: 'business' },
+  // ---- LICENSING / CREDENTIALS (business) ----
+  { kw: ['dea ', 'dea registration', 'drug enforcement', 'medical board', 'board of medical', 'nc medical board', 'nc medical', 'state medical', 'licensure', 'license renewal', 'medical license', 'fsmb', 'usmle', 'abim', 'abms', 'board certif', 'maintenance of certif', 'credential', 'nccpa', 'nbme'], category: 'licensing', klass: 'business' },
+  // ---- PROFESSIONAL DEVELOPMENT / CME (business) ----
+  { kw: ['cme ', 'continuing medical', 'continuing education', 'american academy', 'american college of', 'aafp', 'acep', 'uptodate', 'up to date', 'medscape', 'pri-med', 'primed', 'osler', 'mayo clinic cme', 'harvard medical', 'wolters kluwer', 'lippincott', 'conference registration', 'symposium', 'coursera', 'udemy', 'grand rounds'], category: 'prof-dev', klass: 'business' },
   // ---- WORK TRAVEL ----
   { kw: ['delta air', 'united air', 'american air', 'southwest air', 'jetblue', 'alaska air', 'airlines', 'marriott', 'hilton', 'hyatt', 'westin', 'sheraton', 'airbnb', 'vrbo', 'hertz', 'avis', 'enterprise rent', 'national car', 'expedia', 'booking.com'], category: 'travel', klass: 'work-travel' },
   // ---- SHOPPING ----
