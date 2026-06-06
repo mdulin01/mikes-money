@@ -348,7 +348,7 @@ export function useMoneyData(user) {
     const m = toLocalMonthStr();
     const ignored = new Set(data?.ignoredAccounts || []);
     return recentTxns
-      .filter(t => !ignored.has(t.accountId) && (t.date || '').startsWith(m) && t.amount > 0 && t.category !== 'transfer')
+      .filter(t => !ignored.has(t.accountId) && (t.date || '').startsWith(m) && t.amount > 0 && t.category !== 'transfer' && t.category !== 'taxes')
       .reduce((sum, t) => sum + t.amount, 0);
   }, [recentTxns, data]);
 

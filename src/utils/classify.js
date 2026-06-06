@@ -10,6 +10,8 @@ const has = (s, arr) => { const x = (s || '').toLowerCase(); return arr.some(k =
 const RULES = [
   // ---- INCOME ----
   { kw: ['avance', 'triad', 'generations', 'unc charlotte', 'uncc', 'university of north carolina at charlotte', 'gma', 'greensboro med'], category: 'other-inc', klass: 'business', inflow: true },
+  // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
+  { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
   { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt'], category: 'transfer' },
   // ---- HOME-OFFICE BILLS (personal, partial business) ----
@@ -23,7 +25,7 @@ const RULES = [
   { kw: ['magnolia place', 'green crest hoa', 'greencrest hoa', 'william douglas'], category: 'hoa', klass: 'rental' },
   // ---- COFFEE / DINING ----
   { kw: ['starbucks', 'dunkin', 'peet', 'caribou coffee', 'dutch bros', 'coffee'], category: 'dining' },
-  { kw: ['mcdonald', 'chick-fil', 'chipotle', 'panera', 'subway', 'wendy', 'taco bell', 'burger', 'pizza', 'restaurant', 'grill', ' cafe', 'doordash', 'uber eats', 'ubereats', 'grubhub', 'tavern', 'bistro', 'kitchen', 'brewery', 'bar &', 'sushi', 'thai', 'mexican'], category: 'dining' },
+  { kw: ['mcdonald', 'chick-fil', 'chipotle', 'panera', 'salata', 'sweetgreen', 'chopt', 'cava ', 'subway', 'wendy', 'taco bell', 'burger', 'pizza', 'restaurant', 'grill', ' cafe', 'doordash', 'uber eats', 'ubereats', 'grubhub', 'tavern', 'bistro', 'kitchen', 'brewery', 'bar &', 'sushi', 'thai', 'mexican'], category: 'dining' },
   // ---- GROCERIES ----
   { kw: ['harris teeter', 'harristeeter', 'ht *', 'kroger', 'publix', 'food lion', 'whole foods', 'trader joe', 'aldi', 'wegmans', 'sprouts', 'costco', "sam's club", 'lidl', 'fresh market', 'thefreshmarket', 'deep roots', 'lowes foods', "lowe's foods", 'weaver street', 'earth fare', "mom's organic", 'moms organic', "mom's market", 'butcher block', 'compare foods', 'super g mart', 'super g', 'piggly wiggly', 'instacart'], category: 'groceries' },
   // ---- GAS / TRANSPORT ----
@@ -39,6 +41,8 @@ const RULES = [
   { kw: ['cme ', 'continuing medical', 'continuing education', 'american academy', 'american college of', 'aafp', 'acep', 'uptodate', 'up to date', 'medscape', 'pri-med', 'primed', 'osler', 'mayo clinic cme', 'harvard medical', 'wolters kluwer', 'lippincott', 'conference registration', 'symposium', 'coursera', 'udemy', 'grand rounds'], category: 'prof-dev', klass: 'business' },
   // ---- WORK TRAVEL ----
   { kw: ['delta air', 'united air', 'american air', 'southwest air', 'jetblue', 'alaska air', 'airlines', 'marriott', 'hilton', 'hyatt', 'westin', 'sheraton', 'airbnb', 'vrbo', 'hertz', 'avis', 'enterprise rent', 'national car', 'expedia', 'booking.com'], category: 'travel', klass: 'work-travel' },
+  // ---- HOUSEHOLD SERVICES ----
+  { kw: ['the maids', 'merry maids', 'molly maid', 'cleaning service', 'housekeeping', 'lawn care', 'landscaping', 'pest control', 'terminix', 'orkin', 'handyman', 'home services'], category: 'maintenance' },
   // ---- SHOPPING ----
   { kw: ['amazon', 'amzn', 'best buy', 'home depot', "lowe's", 'lowes', 'ikea', 'wayfair', 'etsy', 'ebay', 'nordstrom', 'macy', ' rei ', "dick's", 'apple store', 'target', 'walmart'], category: 'shopping' },
   // ---- INSURANCE ----

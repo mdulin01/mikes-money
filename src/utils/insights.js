@@ -19,7 +19,9 @@ export function estimatedMonthlySpend(recentTxns) {
   // Average of top-3 recent months (ignores partial current month)
   const byMonth = {};
   for (const t of recentTxns) {
-    if (!t.date || t.category === 'transfer' || t.amount <= 0) continue;
+    // Exclude transfers and tax payments — one-time IRS/NC payments otherwise distort
+    // the "normal monthly burn" baseline (and with it cash runway + savings rate).
+    if (!t.date || t.category === 'transfer' || t.category === 'taxes' || t.amount <= 0) continue;
     const m = t.date.slice(0, 7);
     byMonth[m] = (byMonth[m] || 0) + t.amount;
   }
@@ -100,18 +102,20 @@ function rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory, mar
   if (isStrongDay) {
     return {
       severity: 'info',
-      title: `📈 ${dayLabel} — good time to trim ${top.ticker}`,
-      body: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio (${money(top.institutionValue)}). Selling on a green day reduces concentration at a higher price.${marketClosed ? ' (Market closed — quote is from last session.)' : ''}`,
-      action: `Sell ~${money(trimAmount)} of ${top.ticker} → buy a broad index (VTI / VOO) to bring concentration to ~${pct(targetPct, 0)}.`,
+      ticker: tickerUpper,
+      title: `📈 ${dayLabel} — a green day to start trimming ${top.ticker}`,
+      body: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio (${money(top.institutionValue)}). Reducing concentration on an up day sells at a higher price.${marketClosed ? ' (Market closed — quote is from last session.)' : ''}`,
+      action: `Trim in stages toward ~${pct(targetPct, 0)} (full trim ≈ ${money(trimAmount)}). First: estimate the capital-gains tax, sell from tax-advantaged accounts where possible, then replace with a broad index (VTI / VOO).`,
     };
   }
 
   // Standing concentration warning (every day until trimmed)
   return {
     severity: 'warn',
-    title: `${top.ticker} is ${pct(currentPct, 0)} of your portfolio`,
+    ticker: tickerUpper,
+    title: `📊 Concentration risk: ${top.ticker} is ${pct(currentPct, 0)} of your portfolio`,
     body: `Single-sector concentration of ${money(top.institutionValue)} adds idiosyncratic risk.${dayChange !== null ? ` ${dayLabel} so far today.` : ''}`,
-    action: `Trim ~${money(trimAmount)} on the next strong day (≥${pct(threshold, 1)} on ${tickerUpper}). The app will flag it.`,
+    action: `Consider staged trimming toward ~${pct(targetPct, 0)}: estimate the tax hit first, prioritize tax-advantaged accounts, and replace with a broad index. The app flags strong days (≥${pct(threshold, 1)} on ${tickerUpper}) as good moments to act.`,
   };
 }
 
@@ -130,6 +134,7 @@ export function generateInsights({
 
   // Highest priority: rebalance opportunity (especially on strong-market days)
   const reb = rebalanceOpportunity({ holdings, investmentsTotal, netWorthHistory, marketQuotes });
+  const rebTicker = reb?.ticker || null; // de-dup: skip this ticker in the single-security rule below
   if (reb) rules.push(reb);
 
   // 1. Cash runway
@@ -179,7 +184,7 @@ export function generateInsights({
     const big = holdings
       .filter(h => {
         const t = (h.ticker || '').toUpperCase();
-        return !INDEX_TICKERS.has(t) && (h.institutionValue || 0) / investmentsTotal > 0.10;
+        return !INDEX_TICKERS.has(t) && t !== rebTicker && (h.institutionValue || 0) / investmentsTotal > 0.10;
       })
       .sort((a, b) => (b.institutionValue || 0) - (a.institutionValue || 0));
     if (big.length) {
