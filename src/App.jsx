@@ -5,8 +5,10 @@ import { ToastProvider } from './components/Toast';
 import LoginScreen from './components/LoginScreen';
 import LoadingScreen from './components/LoadingScreen';
 import Nav from './components/Nav';
+import RupertBanner from './components/RupertBanner';
 import RefreshControl from './components/RefreshControl';
 import Footer from './components/Footer';
+import { db } from './firebase-config';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Holdings from './pages/Holdings';
@@ -32,6 +34,7 @@ export default function App() {
       <ToastProvider>
         <div className="min-h-screen bg-slate-900 pb-20 md:pb-0">
           <Nav onLogout={logout} />
+          <RupertBanner db={db} accent="#fbbf24" />
           <RefreshControl asOf={money.dataAsOf} refreshing={money.refreshing} onRefresh={money.refreshData}>
           <Routes>
             <Route path="/" element={<Dashboard {...money} />} />
