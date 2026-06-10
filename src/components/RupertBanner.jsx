@@ -20,6 +20,18 @@ const rel = (iso) => {
   } catch { return ''; }
 };
 
+
+// Always-visible floating peacock — opens Rupert chat in Mike's Life from any spoke app.
+const RUPERT_URL = 'https://mikeslife.app/?rupert=1';
+function FloatingPeacock({ accent }) {
+  return (
+    <a href={RUPERT_URL} target="_blank" rel="noopener noreferrer" title="Talk to Rupert"
+      style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 9999, width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, textDecoration: 'none', background: 'rgba(15,23,42,.88)', border: `1.5px solid ${accent}88`, boxShadow: `0 4px 18px rgba(0,0,0,.35), 0 0 12px ${accent}44`, backdropFilter: 'blur(6px)' }}>
+      <span role="img" aria-label="Rupert">🦚</span>
+    </a>
+  );
+}
+
 export default function RupertBanner({ db, accent = '#2dd4bf' }) {
   const [note, setNote] = useState(null);
   const [hidden, setHidden] = useState(false);
@@ -32,10 +44,10 @@ export default function RupertBanner({ db, accent = '#2dd4bf' }) {
     } catch { /* ignore */ }
   }, [db]);
 
-  if (!note || hidden) return null;
+  if (!note || hidden) return <FloatingPeacock accent={accent} />;
   const signals = note.signals || [];
   const priorities = note.priorities || [];
-  if (!note.text && !signals.length && !priorities.length) return null;
+  if (!note.text && !signals.length && !priorities.length) return <FloatingPeacock accent={accent} />;
 
   const S = {
     wrap: { margin: '12px auto 0', maxWidth: 1120, padding: '0 16px' },
@@ -55,6 +67,8 @@ export default function RupertBanner({ db, accent = '#2dd4bf' }) {
   };
 
   return (
+    <>
+    <FloatingPeacock accent={accent} />
     <div style={S.wrap}>
       <div style={S.card}>
         <button style={S.x} title="Dismiss" onClick={() => setHidden(true)}>×</button>
@@ -82,5 +96,6 @@ export default function RupertBanner({ db, accent = '#2dd4bf' }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
