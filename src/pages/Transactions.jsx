@@ -12,7 +12,9 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
   const [propertyFilter, setPropertyFilter] = useState('all');
+  const [largeOnly, setLargeOnly] = useState(false);
   const [busy, setBusy] = useState(false);
+  const largeThreshold = data?.preferences?.largeTxnThreshold || 500;
   const categories = data?.categories || [];
   const userRules = data?.userRules || [];
   const catById = useMemo(() => Object.fromEntries(categories.map(c => [c.id, c])), [categories]);
@@ -49,10 +51,11 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
       if (categoryFilter === 'review' ? !t.needsReview : (categoryFilter !== 'all' && (t.category || 'uncategorized') !== categoryFilter)) return false;
       if (classFilter !== 'all' && t._class !== classFilter) return false;
       if (propertyFilter !== 'all') { if (propertyFilter === 'none' ? t._property : t._property !== propertyFilter) return false; }
+      if (largeOnly && Math.abs(t.amount || 0) < largeThreshold) return false;
       if (!s) return true;
       return (t.name || t.merchantName || '').toLowerCase().includes(s) || (t.category || '').toLowerCase().includes(s);
     });
-  }, [rows, search, categoryFilter, classFilter, propertyFilter]);
+  }, [rows, search, categoryFilter, classFilter, propertyFilter, largeOnly, largeThreshold]);
 
   const total = useMemo(() => filtered.reduce((s, t) => s + (t.amount || 0), 0), [filtered]);
   // Promote the current row's manual overrides to a saved user rule + apply to similar txns.
@@ -116,6 +119,11 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
       </header>
 
       <div className="flex gap-2 flex-wrap">
+        <button onClick={() => setLargeOnly(!largeOnly)}
+          title={`Transactions of $${largeThreshold}+ (set preferences.largeTxnThreshold to change)`}
+          className={`text-xs px-3 py-1.5 rounded-lg border ${largeOnly ? 'border-orange-400 bg-orange-900/30 text-orange-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
+          ⚠ Large (${largeThreshold}+)
+        </button>
         {CLASSES.map(c => classTotals[c.id] != null && (
           <button key={c.id} onClick={() => setClassFilter(classFilter === c.id ? 'all' : c.id)}
             className={`text-xs px-3 py-1.5 rounded-lg border ${classFilter === c.id ? 'border-blue-400 bg-blue-900/30 text-blue-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
