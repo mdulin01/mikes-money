@@ -29,7 +29,7 @@ function FloatingPeacock({ accent }) {
   const standalone = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone);
   return (
     <a href={RUPERT_URL} {...(standalone ? {} : { target: '_blank', rel: 'noopener noreferrer' })} title="Talk to Rupert"
-      style={{ position: 'fixed', bottom: 84, right: 14, zIndex: 9999, width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, textDecoration: 'none', background: 'rgba(15,23,42,.88)', border: `1.5px solid ${accent}88`, boxShadow: `0 4px 18px rgba(0,0,0,.35), 0 0 12px ${accent}44`, backdropFilter: 'blur(6px)' }}>
+      className="hidden md:flex" style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 9999, width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, textDecoration: 'none', background: 'rgba(15,23,42,.88)', border: `1.5px solid ${accent}88`, boxShadow: `0 4px 18px rgba(0,0,0,.35), 0 0 12px ${accent}44`, backdropFilter: 'blur(6px)' }}>
       <span role="img" aria-label="Rupert">🦚</span>
     </a>
   );
