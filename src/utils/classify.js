@@ -9,7 +9,11 @@ const has = (s, arr) => { const x = (s || '').toLowerCase(); return arr.some(k =
 // inflow: rule only applies to money coming IN (amount < 0 in Plaid convention).
 const RULES = [
   // ---- INCOME ----
-  { kw: ['avance', 'triad', 'generations', 'unc charlotte', 'uncc', 'university of north carolina at charlotte', 'gma', 'greensboro med'], category: 'other-inc', klass: 'business', inflow: true },
+  { kw: ['avance', 'triad', 'generations', 'unc charlotte', 'uncc', 'university of north carolina at charlotte', 'gma', 'greensboro med', 'gray matter'], category: 'other-inc', klass: 'business', inflow: true },
+  // Triad Primary Care pays by BOA book wire — descriptor carries no payer name (confirmed by Mike 2026-06-11).
+  { kw: ['wire type:book'], category: 'other-inc', klass: 'business', inflow: true },
+  // Rent income: Liam's transfers + Avail (rental platform) deposits.
+  { kw: ['liam dulin', 'avail des', 'availco', 'avail tenant', 'avail rent'], category: 'rental', klass: 'rental', inflow: true },
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
