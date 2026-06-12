@@ -9,7 +9,7 @@ const THRESHOLD = 70; // px pull distance to trigger a refresh
  * "as of" timestamp and Update action appear on every section. The Update action
  * fires a Plaid sync (onRefresh); realtime Firestore listeners then surface the data.
  */
-export default function RefreshControl({ asOf, refreshing, onRefresh, children }) {
+export default function RefreshControl({ asOf, refreshing, onRefresh, extra, children }) {
   const toast = useToast();
   const [pull, setPull] = useState(0);
   const startY = useRef(null);
@@ -61,6 +61,8 @@ export default function RefreshControl({ asOf, refreshing, onRefresh, children }
         <span className="text-slate-500" title={`Data as of ${exactTime(asOf)}`}>
           {refreshing ? 'Updating…' : <>Updated <span className="text-slate-400">{relativeTime(asOf)}</span></>}
         </span>
+        <div className="flex items-center gap-3">
+        {extra}
         <button
           onClick={doRefresh}
           disabled={refreshing}
@@ -69,6 +71,7 @@ export default function RefreshControl({ asOf, refreshing, onRefresh, children }
           <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>🔄</span>
           {refreshing ? 'Updating' : 'Update'}
         </button>
+        </div>
       </div>
 
       {/* Pull-to-refresh indicator (mobile) */}

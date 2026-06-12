@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { matchAmazonOrder } from '../utils/amazon';
 import { signedMoney } from '../utils/format';
 import { humanDate } from '../utils/dateUtils';
 import { CLASSES } from '../constants';
@@ -7,7 +8,7 @@ import { PROPERTIES, PROPERTY_BY_ID, effectiveProperty } from '../data/propertie
 
 const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
-export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, applyRuleToTxns, autoCategorizeAll }) {
+export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, applyRuleToTxns, autoCategorizeAll, amazonOrders = [] }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
@@ -165,6 +166,9 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
                 <div className="flex-1 min-w-0">
                   <div className="truncate">{t.merchantName || t.name || '—'}{t.needsReview && <span title="size-detected — verify" className="ml-1 text-orange-400">⚑</span>}{t._homeOffice && <span title="home office (partial business)" className="ml-1 text-[10px] text-emerald-400">🏠 home office</span>}</div>
                   <div className="text-slate-500 text-xs">{humanDate(t.date)} · {t.accountName || t.accountId}</div>
+                  {(() => { const o = matchAmazonOrder(t, amazonOrders); return o ? (
+                    <div className="text-[11px] text-amber-300/80 truncate" title={`Amazon order ${o.orderId} · ${o.date}`}>📦 {((o.items || []).join(' · ') || o.subject || '').slice(0, 95)}</div>
+                  ) : null; })()}
                 </div>
                 <div className={`mono-nums text-right whitespace-nowrap font-medium ${t.amount < 0 ? 'text-emerald-400' : 'text-slate-100'}`}>{signedMoney(-t.amount, { cents: true })}</div>
               </div>

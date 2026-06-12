@@ -7,6 +7,8 @@ import LoadingScreen from './components/LoadingScreen';
 import Nav from './components/Nav';
 import RupertBanner from './components/RupertBanner';
 import RefreshControl from './components/RefreshControl';
+import InsightButton from './components/Insight';
+import { buildInsightContext } from './utils/insightContext';
 import Footer from './components/Footer';
 import { db } from './firebase-config';
 import Dashboard from './pages/Dashboard';
@@ -36,7 +38,7 @@ export default function App() {
         <div className="min-h-screen bg-slate-900 pb-20 md:pb-0">
           <Nav onLogout={logout} />
           <RupertBanner db={db} accent="#fbbf24" />
-          <RefreshControl asOf={money.dataAsOf} refreshing={money.refreshing} onRefresh={money.refreshData}>
+          <RefreshControl asOf={money.dataAsOf} refreshing={money.refreshing} onRefresh={money.refreshData} extra={<InsightButton getContext={() => buildInsightContext(window.location.pathname, money)} />}>
           <Routes>
             <Route path="/" element={<Dashboard {...money} />} />
             <Route path="/accounts" element={<Accounts {...money} />} />

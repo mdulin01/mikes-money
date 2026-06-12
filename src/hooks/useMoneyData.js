@@ -83,6 +83,16 @@ export function useMoneyData(user) {
     return unsub;
   }, [user?.uid]);
 
+  // Amazon orders parsed from Gmail by mikeslife /api/cron-amazon (read-only here).
+  const [amazonOrders, setAmazonOrders] = useState([]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(collection(db, 'amazonOrders'), (snap) => {
+      setAmazonOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (e) => console.warn('amazonOrders listener (rules published?):', e.message));
+    return unsub;
+  }, [user?.uid]);
+
   // Investment holdings (positions, securities)
   useEffect(() => {
     if (!user?.uid) return;
@@ -395,6 +405,7 @@ export function useMoneyData(user) {
     liabilities,
     netWorthHistory,
     snapshotHistory,
+    amazonOrders,
     dataAsOf,
     refreshing,
     refreshData,

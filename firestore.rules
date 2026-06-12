@@ -57,6 +57,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Amazon orders parsed from Gmail (written by mikeslife cron via Admin SDK)
+    match /amazonOrders/{orderId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
     // Dashboard snapshots (client-written from Dashboard render — read by Rupert)
     // One doc per local date (YYYY-MM-DD). Captures all computed dashboard values.
     match /dashboardSnapshots/{dateStr} {
