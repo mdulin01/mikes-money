@@ -20,6 +20,7 @@ import Tax from './pages/Tax';
 import Budgets from './pages/Budgets';
 import CashFlow from './pages/CashFlow';
 import Scenarios from './pages/Scenarios';
+import Business from './pages/Business';
 
 export default function App() {
   const { user, loading: authLoading, login, logout } = useAuth();
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/tax" element={<Tax {...money} />} />
             <Route path="/budgets" element={<Budgets {...money} />} />
             <Route path="/cashflow" element={<CashFlow {...money} />} />
+            <Route path="/business" element={<Business {...money} />} />
             <Route path="/scenarios" element={<Scenarios {...money} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

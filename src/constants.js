@@ -30,6 +30,7 @@ export const SECTIONS = [
   { id: 'transactions', label: 'Txns',       emoji: '💳' },
   { id: 'budgets',     label: 'Budgets',     emoji: '🎯' },
   { id: 'cashflow',    label: 'Cash Flow',   emoji: '💰' },
+  { id: 'business',    label: 'Business',    emoji: '💼' },
   { id: 'scenarios',   label: 'Scenarios',   emoji: '🔮' },
   { id: 'tax',         label: 'Tax',         emoji: '🧾' },
 ];

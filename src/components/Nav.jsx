@@ -8,7 +8,7 @@ const GROUPS = [
   { id: 'home', label: 'Home', emoji: '📊', sections: ['dashboard'] },
   { id: 'spend', label: 'Spend', emoji: '💳', sections: ['transactions', 'budgets', 'cashflow'] },
   { id: 'invest', label: 'Invest', emoji: '📈', sections: ['holdings', 'allocation', 'retirement'] },
-  { id: 'tax', label: 'Tax', emoji: '🧾', sections: ['tax', 'scenarios'] },
+  { id: 'tax', label: 'Biz/Tax', emoji: '🧾', sections: ['tax', 'business', 'scenarios'] },
   { id: 'more', label: 'More', emoji: '⋯', sections: ['accounts', 'checkup'] },
 ];
 
