@@ -173,7 +173,16 @@ export function useMoneyData(user) {
       const sync = httpsCallable(functions, 'syncItem');
       const results = await Promise.allSettled(itemsSnap.docs.map(d => sync({ itemId: d.id })));
       const ok = results.filter(r => r.status === 'fulfilled').length;
-      return { ok, failed: results.length - ok, total: results.length };
+      // Surface investment-holdings sync outcome (Plaid often returns balances but
+      // not positions for Vanguard) so it isn't a silent mystery.
+      let holdingsSynced = 0; const holdingsErrors = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          holdingsSynced += (r.value.holdingsSynced || 0);
+          if (r.value.holdingsError) holdingsErrors.push(r.value.holdingsError);
+        }
+      }
+      return { ok, failed: results.length - ok, total: results.length, holdingsSynced, holdingsErrors };
     } catch (e) {
       console.error('refreshData failed:', e);
       return { ok: 0, failed: 1, total: 1, error: e?.message };

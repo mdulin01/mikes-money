@@ -24,7 +24,13 @@ export default function RefreshControl({ asOf, refreshing, onRefresh, extra, chi
     if (r.total === 0) toast('No linked institutions to sync', 'info');
     else if (r.error) toast(`Update failed: ${r.error}`, 'error');
     else if (r.failed) toast(`Synced ${r.ok}/${r.total} · ${r.failed} failed`, r.ok ? 'info' : 'error');
-    else toast(`Updated ${r.ok} institution${r.ok === 1 ? '' : 's'}`, 'success');
+    else {
+      toast(`Updated ${r.ok} institution${r.ok === 1 ? '' : 's'}`, 'success');
+      if (r.holdingsSynced != null) {
+        if (r.holdingsSynced > 0) toast(`${r.holdingsSynced} live holdings synced via Plaid`, 'info');
+        else if (r.holdingsErrors && r.holdingsErrors.length) toast(`No Plaid holdings: ${[...new Set(r.holdingsErrors)].join(', ')} (positions stay manual)`, 'info');
+      }
+    }
   }, [onRefresh, refreshing, toast]);
 
   const onTouchStart = (e) => {

@@ -366,6 +366,7 @@ async function syncOne(itemId) {
 
   // Investments: holdings + securities (best-effort — only some accounts support it)
   let holdingsSynced = 0;
+  let holdingsErr = null;
   try {
     const holdingsRes = await client.investmentsHoldingsGet({ access_token });
     const securitiesById = Object.fromEntries(
@@ -394,12 +395,14 @@ async function syncOne(itemId) {
     }
     await hBatch.commit();
   } catch (e) {
-    // Bank doesn't support Investments, or product not authorized — skip silently
-    if (e?.response?.data?.error_code !== 'PRODUCTS_NOT_SUPPORTED' &&
-        e?.response?.data?.error_code !== 'NO_INVESTMENT_ACCOUNTS') {
-      console.warn(`holdings sync skipped for ${itemId}:`, e?.response?.data?.error_code || e.message);
+    holdingsErr = e?.response?.data?.error_code || e?.message || 'error';
+    if (holdingsErr !== 'PRODUCTS_NOT_SUPPORTED' && holdingsErr !== 'NO_INVESTMENT_ACCOUNTS') {
+      console.warn(`holdings sync skipped for ${itemId}:`, holdingsErr);
     }
   }
+  // Record the holdings-sync outcome on the item so the UI can show WHY positions
+  // are/aren't coming through Plaid (instead of failing silently).
+  try { await ref.set({ holdingsStatus: { count: holdingsSynced, error: holdingsErr || null, at: FieldValue.serverTimestamp() } }, { merge: true }); } catch (_) {}
 
   // Liabilities: credit card APRs, loan details, mortgage data
   let liabilitiesSynced = 0;
@@ -451,7 +454,7 @@ async function syncOne(itemId) {
   }
 
   await ref.update({ cursor: nextCursor, lastSyncedAt: FieldValue.serverTimestamp() });
-  return { added, modified, removed, holdingsSynced, liabilitiesSynced };
+  return { added, modified, removed, holdingsSynced, holdingsError: holdingsErr, liabilitiesSynced };
 }
 
 function normalizeTxn(t, itemId) {
