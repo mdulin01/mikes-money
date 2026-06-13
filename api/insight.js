@@ -44,7 +44,7 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || 'gpt-5.5',
-        max_completion_tokens: 400,
+        max_completion_tokens: 3000, // gpt-5.5 is a reasoning model — a small cap gets eaten by reasoning tokens and returns empty content
         messages: [
           { role: 'system', content: sys },
           { role: 'user', content: (question ? question + '\n\n' : '') + JSON.stringify(context).slice(0, 24000) },
