@@ -127,7 +127,7 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
 
       {/* Headline numbers */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Net worth" value={money(netWorth)} big tone={pnlClass(netWorth)} />
+        <Tile label="Net worth" value={money(netWorth)} big className="col-span-2 lg:col-span-1" tone={pnlClass(netWorth)} />
         <Tile label="Assets" value={money(assets)} tone="text-emerald-400" />
         <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
         <Tile label="Savings rate (mo)" value={`${(savingsRate * 100).toFixed(0)}%`} tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'} />
@@ -223,12 +223,15 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
   );
 }
 
-function Tile({ label, value, big, tone = 'text-slate-100', hint }) {
+function Tile({ label, value, big, tone = 'text-slate-100', hint, className = '' }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <div className="text-xs text-slate-400 uppercase tracking-wide">{label}</div>
-      <div className={`${big ? 'text-3xl md:text-4xl' : 'text-2xl'} font-bold mono-nums mt-1 ${tone}`}>{value}</div>
-      {hint && <div className="text-[11px] text-slate-500 mt-1">{hint}</div>}
+    <div className={`bg-slate-800 border border-slate-700 rounded-xl p-4 min-w-0 overflow-hidden ${className}`}>
+      <div className="text-[11px] text-slate-400 uppercase tracking-wide truncate">{label}</div>
+      <div
+        className={`font-bold mono-nums mt-1 leading-none tracking-tight tabular-nums whitespace-nowrap ${tone}`}
+        style={{ fontSize: big ? 'clamp(1.5rem, 7vw, 2.5rem)' : 'clamp(1.05rem, 5vw, 1.5rem)' }}
+      >{value}</div>
+      {hint && <div className="text-[11px] text-slate-500 mt-1 truncate">{hint}</div>}
     </div>
   );
 }
