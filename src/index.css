@@ -3,6 +3,9 @@
 html, body {
   /* Use our in-app pull-to-refresh instead of the browser's native reload. */
   overscroll-behavior-y: contain;
+  /* Stop any wide row/table/chart from forcing horizontal page scroll on mobile. */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {

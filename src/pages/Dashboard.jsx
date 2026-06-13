@@ -3,12 +3,13 @@ import { money, signedMoney, pnlClass, pct } from '../utils/format';
 import { toLocalMonthStr, monthStart } from '../utils/dateUtils';
 import { ACCOUNT_TYPES } from '../constants';
 import NetWorthChart from '../components/NetWorthChart';
+import NetWorthBreakdown from '../components/NetWorthBreakdown';
 import { simulate } from '../utils/monteCarlo';
 import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRate } from '../utils/insights';
 import { useMarketQuotes } from '../hooks/useMarketQuotes';
 import { useDailySnapshot } from '../hooks/useDailySnapshot';
 
-export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory }) {
+export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory, snapshotHistory }) {
   const month = toLocalMonthStr();
 
   // Group accounts by asset side
@@ -161,6 +162,9 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
 
       {/* Net worth history */}
       <NetWorthChart history={netWorthHistory} currentNetWorth={netWorth} />
+
+      {/* Empower-style component breakdown + per-component trend */}
+      <NetWorthBreakdown byType={byType} snapshotHistory={snapshotHistory} />
 
       {/* Asset/liability breakdown */}
       <section className="grid md:grid-cols-2 gap-4">
