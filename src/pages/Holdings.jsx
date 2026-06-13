@@ -14,7 +14,7 @@ const BLANK_FORM = {
 
 export default function Holdings({
   holdings, accounts, investmentsTotal,
-  addManualHolding, updateManualHolding, deleteManualHolding,
+  addManualHolding, updateManualHolding, deleteManualHolding, clearManualHoldings,
   data, updateConfig,
 }) {
   const [groupBy, setGroupBy] = useState('account');
@@ -115,14 +115,21 @@ export default function Holdings({
               <> · unrealized {money(unrealized)} ({pct(unrealized / costBasisTotal)})</>
             )}
           </p>
-          {(data?.manualHoldings?.length > 0) && (
-            <p className="text-amber-400/80 text-xs mt-1">
-              ⚠ Manually entered — the top-bar <b>Update</b> syncs Plaid accounts &amp; transactions, not these positions.
-              {data?.manualHoldingsUpdatedAt
-                ? <> Last edited {new Date(data.manualHoldingsUpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.</>
-                : ' Edit a holding or Bulk import to refresh.'}
-            </p>
-          )}
+          {(data?.manualHoldings?.length > 0) && (() => {
+            const hasLive = (holdings || []).some(h => !h.manual);
+            const dupCount = (data.manualHoldings || []).filter(h => !/tiaa/i.test(h.accountName || '')).length;
+            return (
+              <p className="text-amber-400/80 text-xs mt-1">
+                {hasLive && dupCount > 0
+                  ? <>⚠ {dupCount} <b>manual</b> positions are duplicating your live Plaid holdings (inflating totals). </>
+                  : <>⚠ Manually entered — the top-bar <b>Update</b> syncs Plaid accounts &amp; transactions, not these positions. </>}
+                {dupCount > 0 && (
+                  <button onClick={async () => { if (window.confirm(`Remove ${dupCount} duplicated manual holdings (the Empower/Portfolio set)? Your live Plaid holdings and TIAA stay.`)) await clearManualHoldings(); }}
+                    className="underline text-amber-300 hover:text-amber-200">Clear duplicated manual holdings</button>
+                )}
+              </p>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2">
           <select

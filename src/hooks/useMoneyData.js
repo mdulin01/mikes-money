@@ -245,6 +245,13 @@ export function useMoneyData(user) {
     return updateConfig({ manualHoldings: next, manualHoldingsUpdatedAt: new Date().toISOString() });
   }, [data, updateConfig]);
 
+  // Clear the bulk-imported manual holdings that now duplicate live Plaid data,
+  // but KEEP anything Plaid can't reach (TIAA) — matched by accountName.
+  const clearManualHoldings = useCallback(() => {
+    const keep = (data?.manualHoldings || []).filter(h => /tiaa/i.test(h.accountName || ''));
+    return updateConfig({ manualHoldings: keep, manualHoldingsUpdatedAt: new Date().toISOString() });
+  }, [data, updateConfig]);
+
   const deleteManualHolding = useCallback((id) => {
     const next = (data?.manualHoldings || []).filter(h => h.id !== id);
     return updateConfig({ manualHoldings: next });
@@ -451,6 +458,7 @@ export function useMoneyData(user) {
     addManualHolding,
     updateManualHolding,
     deleteManualHolding,
+    clearManualHoldings,
     toggleAccountIgnored,
     categorizeTransaction,
     setTransactionClass,
