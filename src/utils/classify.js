@@ -17,7 +17,7 @@ const RULES = [
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
-  { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt'], category: 'transfer' },
+  { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt', 'citi card online', 'citictp'], category: 'transfer' },
   // ---- HOME-OFFICE BILLS (personal, partial business) ----
   { kw: ['duke energy', 'piedmont natural', 'dominion energy', 'charlotte water', 'water/sewer'], category: 'utilities', homeOffice: true },
   { kw: ['spectrum', 'at&t', 'at and t', 'att*', 'attbill', 'verizon', 't-mobile', 'tmobile', 'xfinity', 'comcast', 'google fi'], category: 'utilities', homeOffice: true },
@@ -25,6 +25,10 @@ const RULES = [
   // ---- RENTAL PROPERTY EXPENSES (Sch E) ----
   // Mortgage servicer Rocket — disambiguated per-property in PROPERTY_RULES (data/properties.js).
   { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], category: 'mortgage', klass: 'rental' },
+  // Charles Schwab pledged-asset loan — rental debt service (descriptor: CHARLES SCHWAB DES:LOAN / SCHWAB LOAN ####). Specific so it never catches brokerage txns.
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], category: 'mortgage', klass: 'rental' },
+  // Guild Mortgage — servicer (property TBD; left personal so it isn't wrongly claimed as a rental deduction — retag if rental).
+  { kw: ['guild mortgage', 'guild mtg'], category: 'mortgage' },
   // HOAs that are unambiguously rental-side (the personal-home HOA "governors court" is matched earlier).
   { kw: ['magnolia place', 'green crest hoa', 'greencrest hoa', 'william douglas'], category: 'hoa', klass: 'rental' },
   // ---- COFFEE / DINING ----
@@ -50,6 +54,7 @@ const RULES = [
   // ---- SHOPPING ----
   { kw: ['amazon', 'amzn', 'best buy', 'home depot', "lowe's", 'lowes', 'ikea', 'wayfair', 'etsy', 'ebay', 'nordstrom', 'macy', ' rei ', "dick's", 'apple store', 'target', 'walmart'], category: 'shopping' },
   // ---- INSURANCE ----
+  { kw: ['north carolina state health plan', 'nc state health plan', 'state health plan', 'ncshp'], category: 'insurance' },
   { kw: ['geico', 'state farm', 'progressive', 'allstate', 'usaa', 'nationwide', 'liberty mutual', 'metlife', ' insurance'], category: 'insurance' },
   // ---- ENTERTAINMENT / FITNESS ----
   { kw: ['amc ', 'cinema', 'movie', 'ticketmaster', 'stubhub', 'steam games', 'playstation', 'xbox', 'nintendo', 'golf', 'planet fit', 'peloton', 'lifetime fitness', 'orange theory', 'orangetheory'], category: 'entertainment' },
