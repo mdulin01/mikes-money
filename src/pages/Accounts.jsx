@@ -6,9 +6,10 @@ import PlaidLinkButton from '../components/PlaidLinkButton';
 export default function Accounts({
   data, allAccounts, ignoredAccountIds,
   addManualAccount, updateManualAccount, deleteManualAccount,
-  toggleAccountIgnored,
+  toggleAccountIgnored, removePlaidItem,
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [removing, setRemoving] = useState(null);
   const [form, setForm] = useState({ name: '', type: 'real-estate', side: 'asset', balance: 0 });
   const manual = data?.manualAccounts || [];
   // Use allAccounts so ignored accounts are still visible here (for toggling on/off)
@@ -87,32 +88,56 @@ export default function Accounts({
         {accounts.length === 0 && (
           <p className="text-slate-500 text-sm">No accounts linked yet. Click "Link account" to connect via Plaid.</p>
         )}
-        <ul className="divide-y divide-slate-700/60 bg-slate-800 rounded-xl border border-slate-700">
-          {accounts.map(a => {
-            const isIgnored = ignoredAccountIds?.has(a.id);
-            return (
-              <li key={a.id}
-                className={`flex justify-between items-center px-4 py-3 text-sm gap-3 ${isIgnored ? 'opacity-50' : ''}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium flex items-center gap-2">
-                    {a.name}
-                    {isIgnored && <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">ignored</span>}
-                  </div>
-                  <div className="text-slate-500 text-xs">{a.institution} · {a.type}{a.mask ? ` ····${a.mask}` : ''}</div>
-                </div>
-                <div className="mono-nums">{money(a.balance, { cents: true })}</div>
-                <button
-                  onClick={() => toggleAccountIgnored(a.id)}
-                  className="text-xs text-slate-500 hover:text-slate-200 px-2"
-                  title={isIgnored ? 'Include in net worth + analyses' : 'Exclude from net worth + analyses'}
-                >
-                  {isIgnored ? 'Unignore' : 'Ignore'}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        {(() => {
+          // Group linked accounts by Plaid item (institution) so each can be unlinked.
+          const groups = {};
+          for (const a of accounts) {
+            const k = a.itemId || a.institution || 'other';
+            (groups[k] = groups[k] || { itemId: a.itemId, institution: a.institution || 'Institution', accts: [] }).accts.push(a);
+          }
+          const remove = async (g) => {
+            if (!g.itemId || !removePlaidItem) return;
+            if (!window.confirm(`Unlink ${g.institution} and its ${g.accts.length} account${g.accts.length === 1 ? '' : 's'}? This disconnects it from Plaid (your transactions are kept). You can re-add it with "Link account".`)) return;
+            setRemoving(g.itemId);
+            try { await removePlaidItem(g.itemId); } catch (e) { window.alert('Remove failed: ' + (e?.message || e)); }
+            finally { setRemoving(null); }
+          };
+          return Object.values(groups).map((g) => (
+            <div key={g.itemId || g.institution} className="bg-slate-800 rounded-xl border border-slate-700 mb-3 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-900/50 border-b border-slate-700/60">
+                <span className="text-xs font-semibold text-slate-300">{g.institution}</span>
+                {g.itemId && removePlaidItem && (
+                  <button onClick={() => remove(g)} disabled={removing === g.itemId}
+                    className="text-xs text-rose-400/80 hover:text-rose-300 disabled:opacity-50"
+                    title="Unlink this institution from Plaid (lets you re-add it)">
+                    {removing === g.itemId ? 'Removing…' : '⨯ Unlink'}
+                  </button>
+                )}
+              </div>
+              <ul className="divide-y divide-slate-700/60">
+                {g.accts.map(a => {
+                  const isIgnored = ignoredAccountIds?.has(a.id);
+                  return (
+                    <li key={a.id} className={`flex justify-between items-center px-4 py-3 text-sm gap-3 ${isIgnored ? 'opacity-50' : ''}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium flex items-center gap-2">{a.name}
+                          {isIgnored && <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">ignored</span>}
+                        </div>
+                        <div className="text-slate-500 text-xs">{a.type}{a.mask ? ` ····${a.mask}` : ''}</div>
+                      </div>
+                      <div className="mono-nums">{money(a.balance, { cents: true })}</div>
+                      <button onClick={() => toggleAccountIgnored(a.id)}
+                        className="text-xs text-slate-500 hover:text-slate-200 px-2"
+                        title={isIgnored ? 'Include in net worth + analyses' : 'Exclude from net worth + analyses'}>
+                        {isIgnored ? 'Unignore' : 'Ignore'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ));
+        })()}
         {ignoredAccountIds?.size > 0 && (
           <p className="text-xs text-slate-500 mt-2">
             Ignored accounts (e.g. shared / family) are excluded from net worth, holdings, allocation,

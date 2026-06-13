@@ -106,6 +106,34 @@ export const exchangePublicToken = onCall(
   },
 );
 
+/* -------------------------------- removeItem ------------------------------- */
+// Unlink a Plaid institution: /item/remove + delete its item/accounts/holdings/
+// liabilities. KEEPS transactions (they carry Mike's manual category/class/property
+// tags). Lets him re-add an institution cleanly (e.g. Vanguard WITH Investments).
+export const removeItem = onCall(
+  { secrets: [PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV] },
+  async (req) => {
+    assertOwner(req.auth);
+    const { itemId } = req.data || {};
+    if (!itemId) throw new HttpsError('invalid-argument', 'Missing itemId');
+    const ref = db().collection('plaidItems').doc(itemId);
+    const snap = await ref.get();
+    if (snap.exists && snap.data().access_token) {
+      try { await plaidClient().itemRemove({ access_token: snap.data().access_token }); }
+      catch (e) { console.warn('itemRemove (Plaid):', e?.response?.data?.error_code || e.message); }
+    }
+    let deleted = 0;
+    for (const coll of ['accounts', 'holdings', 'liabilities']) {
+      const q = await db().collection(coll).where('itemId', '==', itemId).get();
+      const batch = db().batch();
+      q.docs.forEach((d) => { batch.delete(d.ref); deleted++; });
+      if (q.size) await batch.commit();
+    }
+    await ref.delete();
+    return { ok: true, deleted };
+  },
+);
+
 /* --------------------------------- syncItem -------------------------------- */
 
 export const syncItem = onCall(

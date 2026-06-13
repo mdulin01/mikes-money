@@ -165,6 +165,11 @@ export function useMoneyData(user) {
 
   // On-demand Plaid pull: sync every linked institution. The realtime Firestore
   // listeners then surface the fresh accounts/holdings/transactions automatically.
+  const removePlaidItem = useCallback(async (itemId) => {
+    const fn = httpsCallable(functions, 'removeItem');
+    return fn({ itemId });
+  }, []);
+
   const refreshData = useCallback(async () => {
     if (refreshing) return { ok: 0, failed: 0, total: 0, busy: true };
     setRefreshing(true);
@@ -430,6 +435,7 @@ export function useMoneyData(user) {
     dataAsOf,
     refreshing,
     refreshData,
+    removePlaidItem,
     netWorth,
     investmentsTotal,
     currentMonthSpend,
