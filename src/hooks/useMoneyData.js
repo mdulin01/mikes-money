@@ -223,12 +223,12 @@ export function useMoneyData(user) {
 
   const addManualHolding = useCallback((h) => {
     const next = [...(data?.manualHoldings || []), { id: crypto.randomUUID(), ...h }];
-    return updateConfig({ manualHoldings: next });
+    return updateConfig({ manualHoldings: next, manualHoldingsUpdatedAt: new Date().toISOString() });
   }, [data, updateConfig]);
 
   const updateManualHolding = useCallback((id, patch) => {
     const next = (data?.manualHoldings || []).map(h => h.id === id ? { ...h, ...patch } : h);
-    return updateConfig({ manualHoldings: next });
+    return updateConfig({ manualHoldings: next, manualHoldingsUpdatedAt: new Date().toISOString() });
   }, [data, updateConfig]);
 
   const deleteManualHolding = useCallback((id) => {

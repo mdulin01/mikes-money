@@ -115,6 +115,14 @@ export default function Holdings({
               <> · unrealized {money(unrealized)} ({pct(unrealized / costBasisTotal)})</>
             )}
           </p>
+          {(data?.manualHoldings?.length > 0) && (
+            <p className="text-amber-400/80 text-xs mt-1">
+              ⚠ Manually entered — the top-bar <b>Update</b> syncs Plaid accounts &amp; transactions, not these positions.
+              {data?.manualHoldingsUpdatedAt
+                ? <> Last edited {new Date(data.manualHoldingsUpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.</>
+                : ' Edit a holding or Bulk import to refresh.'}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -209,7 +217,7 @@ export default function Holdings({
                 onClick={async () => {
                   const withIds = bulkPreview.map(h => ({ id: crypto.randomUUID(), ...h }));
                   const next = [...(data?.manualHoldings || []), ...withIds];
-                  await updateConfig({ manualHoldings: next });
+                  await updateConfig({ manualHoldings: next, manualHoldingsUpdatedAt: new Date().toISOString() });
                   setBulkOpen(false);
                   setBulkText('');
                   setBulkPreview(null);
