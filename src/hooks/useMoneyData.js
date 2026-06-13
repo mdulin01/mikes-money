@@ -59,6 +59,18 @@ export function useMoneyData(user) {
     return unsub;
   }, [user?.uid]);
 
+  // One-time label cleanup: the bulk-imported holdings were named "Empower
+  // Portfolio" — Mike wants them shown as just his portfolio. Renames in place
+  // (idempotent; runs only if the old label is still present).
+  useEffect(() => {
+    if (!data?.manualHoldings?.length) return;
+    if (!data.manualHoldings.some((h) => /empower/i.test(h.accountName || ''))) return;
+    const fixed = data.manualHoldings.map((h) => /empower/i.test(h.accountName || '')
+      ? { ...h, accountName: (h.accountName || '').replace(/empower\s*/i, '').trim() || 'Portfolio' }
+      : h);
+    updateConfig({ manualHoldings: fixed });
+  }, [data?.manualHoldings]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Accounts (written by Plaid sync or manual edits from functions)
   useEffect(() => {
     if (!user?.uid) return;
