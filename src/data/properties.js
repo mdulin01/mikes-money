@@ -24,6 +24,14 @@ export const PROPERTIES = [
     schedule: 'rental',
   },
   {
+    id: 'brookhurst',
+    nickname: 'Brookhurst',
+    address: '2113 Brookhurst Drive, Winston-Salem, NC',
+    type: 'house',
+    schedule: 'rental',
+    owner: 'adam', // managed by Liam for Adam Britten; rent via Avail ($1,300/mo, move-in late July 2026)
+  },
+  {
     id: 'prairie-trail',
     nickname: '2 Prairie Trail',
     address: '2 Prairie Trail Unit D, Greensboro, NC',
@@ -56,6 +64,9 @@ export const PROPERTY_RULES = [
   { kw: ['nelm', 'n. elm', 'n elm'], propertyId: 'north-elm' },
   { kw: ['prairie'], propertyId: 'prairie-trail' },
   { kw: ['hillcrest'], propertyId: 'hillcrest' },
+  { kw: ['brookhurst'], propertyId: 'brookhurst' },
+  // Avail deposits post as 'Move Sales Inc' for BOTH Green Crest and Brookhurst — disambiguate by amount.
+  { kw: ['move sales inc', 'move sales'], amount: 1300, propertyId: 'brookhurst' },
   { kw: ['move sales inc', 'move sales', 'greencrest'], propertyId: 'green-crest' },
   // ---- HOAs (unique payees, no amount disambiguation needed) ----
   { kw: ['magnolia place'], propertyId: 'north-elm' },
