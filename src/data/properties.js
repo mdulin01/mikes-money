@@ -52,6 +52,11 @@ export const PROPERTY_BY_ID = Object.fromEntries(PROPERTIES.map(p => [p.id, p]))
 // `amount` (optional, in cents-tolerant dollars) disambiguates when one payee
 // services multiple properties — match if abs(txn amount) is within $5 of the listed value.
 export const PROPERTY_RULES = [
+  // ---- Rent deposits: property parsed from the Zelle memo / payout descriptor ----
+  { kw: ['nelm', 'n. elm', 'n elm'], propertyId: 'north-elm' },
+  { kw: ['prairie'], propertyId: 'prairie-trail' },
+  { kw: ['hillcrest'], propertyId: 'hillcrest' },
+  { kw: ['move sales inc', 'move sales', 'greencrest'], propertyId: 'green-crest' },
   // ---- HOAs (unique payees, no amount disambiguation needed) ----
   { kw: ['magnolia place'], propertyId: 'north-elm' },
   { kw: ['green crest hoa', 'greencrest hoa'], propertyId: 'green-crest' },

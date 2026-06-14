@@ -12,8 +12,12 @@ const RULES = [
   { kw: ['avance', 'triad', 'generations', 'unc charlotte', 'uncc', 'university of north carolina at charlotte', 'gma', 'greensboro med', 'gray matter'], category: 'other-inc', klass: 'business', inflow: true },
   // Triad Primary Care pays by BOA book wire — descriptor carries no payer name (confirmed by Mike 2026-06-11).
   { kw: ['wire type:book'], category: 'other-inc', klass: 'business', inflow: true },
-  // Rent income: Liam's transfers + Avail (rental platform) deposits.
-  { kw: ['liam dulin', 'avail des', 'availco', 'avail tenant', 'avail rent'], category: 'rental', klass: 'rental', inflow: true },
+  // Rent income — three channels:
+  //  • Liam collects N.Elm/Prairie/Hillcrest and Zelles Mike (memo names the property).
+  //  • Green Crest pays via Avail → posts as "Move Sales Inc" (Avail's payout entity) into 5/3.
+  //  • Late/manual rent arrives as a money-order COUNTER CREDIT (no payer name) — not auto-attributable;
+  //    Liam documents those in rainbow-rentals (payment method per property).
+  { kw: ['liam dulin', 'avail des', 'availco', 'avail tenant', 'avail rent', 'move sales inc', 'move sales', 'move, inc'], category: 'rental', klass: 'rental', inflow: true },
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
