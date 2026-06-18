@@ -17,28 +17,37 @@ const TOOLTIP_ITEM = { color: '#e2e8f0', padding: 0 };
 const TOOLTIP_LABEL = { color: '#94a3b8', marginBottom: 4, fontSize: 11 };
 import { money, pct } from '../utils/format';
 import { ASSET_CLASSES, classifyHolding, allocateHoldings, targetAllocation } from '../utils/assetClass';
-import { computeSectorTotals } from '../utils/sectorMap';
+import { computeSectorTotals, computeSectorHoldings } from '../utils/sectorMap';
 import { simulate } from '../utils/monteCarlo';
 import { computeAge } from '../utils/dateUtils';
 import { USER_PROFILE } from '../constants';
 
 const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
 
-// Sector palette (roughly mirrors Empower's sector view)
+// Sector palette — muted mid-tones tuned for the dark theme (less glare than pure brand colors).
 const SECTOR_COLORS = {
-  Technology: '#f5c518',
-  'Communication Services': '#1565c0',
-  'Consumer Cyclical': '#7b1fa2',
-  'Consumer Defensive': '#ef6c00',
-  'Financial Services': '#8bc34a',
-  Healthcare: '#ec407a',
-  Industrials: '#1f2937',
-  Energy: '#e53935',
-  Utilities: '#5e35b1',
-  'Basic Materials': '#26c6da',
-  'Real Estate': '#f59e0b',
+  Technology: '#cda434',
+  'Communication Services': '#5b8db8',
+  'Consumer Cyclical': '#9b6fb0',
+  'Consumer Defensive': '#cf8a52',
+  'Financial Services': '#86b06a',
+  Healthcare: '#cf7088',
+  Industrials: '#7a8595',
+  Energy: '#cc6b63',
+  Utilities: '#8a7fc0',
+  'Basic Materials': '#5fb3c0',
+  'Real Estate': '#c9a06a',
   Diversified: '#64748b',
 };
+
+// Readable label color (dark on light fills, light on dark fills) via relative luminance.
+function labelColor(hex) {
+  const c = (hex || '').replace('#', '');
+  if (c.length < 6) return '#f8fafc';
+  const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.62 ? '#0f172a' : '#f8fafc';
+}
 
 // Preset allocation scenarios (stock / bond split)
 const PRESETS = [
@@ -532,33 +541,44 @@ function StatMini({ label, value, tone }) {
 /* -------------------- Sector breakdown (Empower-style) -------------------- */
 
 function SectorCell(props) {
-  const { x, y, width, height, name, value, total, root } = props;
+  const { x, y, width, height, name, value, total, root, onPick, selected } = props;
   if (!name || width <= 0 || height <= 0) return null;
   const denom = total || root?.value || 0;
   const p = denom ? value / denom : 0;
   const color = SECTOR_COLORS[name] || '#64748b';
+  const txt = labelColor(color);
+  const isSel = selected === name;
+  const clipId = `secclip-${String(name).replace(/[^a-z0-9]/gi, '')}`;
   return (
-    <g>
-      <rect x={x} y={y} width={width} height={height} fill={color} stroke="#0f172a" strokeWidth={2} />
-      {width > 54 && height > 22 && (
-        <text x={x + 6} y={y + 16} fill="#fff" fontSize={11} fontWeight={600}>{name}</text>
-      )}
-      {width > 54 && height > 38 && (
-        <text x={x + 6} y={y + 31} fill="#fff" fontSize={10} opacity={0.85}>{(p * 100).toFixed(1)}%</text>
-      )}
+    <g style={{ cursor: onPick ? 'pointer' : 'default' }} onClick={onPick ? () => onPick(name) : undefined}>
+      <defs>
+        <clipPath id={clipId}><rect x={x} y={y} width={width} height={height} /></clipPath>
+      </defs>
+      <rect x={x} y={y} width={width} height={height} fill={color}
+        fillOpacity={isSel ? 1 : 0.92} stroke={isSel ? '#f8fafc' : '#0f172a'} strokeWidth={isSel ? 2.5 : 2} />
+      <g clipPath={`url(#${clipId})`}>
+        {width > 46 && height > 18 && (
+          <text x={x + 7} y={y + 16} fill={txt} fontSize={11} fontWeight={600}>{name}</text>
+        )}
+        {width > 46 && height > 34 && (
+          <text x={x + 7} y={y + 31} fill={txt} fontSize={10} opacity={0.82}>{(p * 100).toFixed(1)}%</text>
+        )}
+      </g>
     </g>
   );
 }
 
 function SectorBreakdown({ holdings, snapshotHistory }) {
-  const { rows, classified, diversifiedStock, totalStock } = useMemo(() => {
+  const { rows, classified, diversifiedStock, totalStock, sectorHoldings } = useMemo(() => {
     const { totals, totalStock, diversifiedStock } = computeSectorTotals(holdings, classifyHolding);
     const rows = Object.entries(totals)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
     const classified = rows.reduce((s, r) => s + r.value, 0);
-    return { rows, classified, diversifiedStock, totalStock };
+    const sectorHoldings = computeSectorHoldings(holdings, classifyHolding);
+    return { rows, classified, diversifiedStock, totalStock, sectorHoldings };
   }, [holdings]);
+  const [sel, setSel] = useState(null);
 
   // 90-day drift: find the snapshot closest to ~90 days ago that has sector data.
   const priorMix = useMemo(() => {
@@ -593,15 +613,39 @@ function SectorBreakdown({ holdings, snapshotHistory }) {
         <p className="text-xs text-slate-500">
           Sector tilt from your mapped funds ({pct(classified / totalStock, 0)} of stock is sector-mapped; the rest is broad/diversified).
           {priorMix && <span> Δ columns compare to {priorMix.date}.</span>}
+          <span className="text-slate-400"> Tap a box to see its holdings.</span>
         </p>
       </div>
 
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <Treemap data={treeData} dataKey="value" stroke="#0f172a" isAnimationActive={false}
-            content={<SectorCell total={classified} />} />
+            content={<SectorCell total={classified} onPick={setSel} selected={sel} />} />
         </ResponsiveContainer>
       </div>
+
+      {sel && sectorHoldings[sel] && sectorHoldings[sel].length > 0 && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: SECTOR_COLORS[sel] || '#64748b' }} />
+              <span className="text-sm font-semibold text-slate-200">{sel}</span>
+              <span className="text-xs text-slate-500 truncate">{money(rows.find(r => r.name === sel)?.value || 0)} · {pct((rows.find(r => r.name === sel)?.value || 0) / (classified || 1), 0)} of mapped</span>
+            </div>
+            <button onClick={() => setSel(null)} className="text-xs text-slate-400 hover:text-slate-200 shrink-0">✕ close</button>
+          </div>
+          <ul className="space-y-1">
+            {sectorHoldings[sel].map((h, i) => (
+              <li key={i} className="flex items-center text-sm gap-3">
+                <span className="mono-nums text-slate-400 w-16 shrink-0">{h.ticker}</span>
+                <span className="flex-1 text-slate-300 truncate">{h.name}</span>
+                <span className="mono-nums text-slate-200 w-24 text-right shrink-0">{money(Math.round(h.value))}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-slate-500 mt-2">Each fund's estimated contribution to {sel} (fund equity value × its mapped sector weight).</p>
+        </div>
+      )}
 
       <ul className="divide-y divide-slate-700/60 text-sm">
         {rows.map(r => {
@@ -609,7 +653,7 @@ function SectorBreakdown({ holdings, snapshotHistory }) {
           const prior = priorMix?.pcts?.[r.name];
           const drift = prior != null ? p - prior : null;
           return (
-            <li key={r.name} className="py-2 flex items-center">
+            <li key={r.name} onClick={() => setSel(sel === r.name ? null : r.name)} className={`py-2 flex items-center cursor-pointer rounded ${sel === r.name ? 'bg-slate-700/40' : 'hover:bg-slate-700/20'}`}>
               <span className="w-3 h-3 rounded-sm mr-3" style={{ background: SECTOR_COLORS[r.name] || '#64748b' }} />
               <span className="flex-1 text-slate-200">{r.name}</span>
               {drift != null && (

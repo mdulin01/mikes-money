@@ -80,3 +80,26 @@ export function computeSectorTotals(holdings, classifyFn) {
   }
   return { totals, totalStock, diversifiedStock };
 }
+
+
+/**
+ * Per-sector holding contributions (for drill-down): sector -> [{ticker,name,value}].
+ * value = fund's equity value × its mapped weight in that sector.
+ */
+export function computeSectorHoldings(holdings, classifyFn) {
+  const bySector = {};
+  for (const h of holdings) {
+    const cls = classifyFn(h);
+    if (cls !== 'us_stock' && cls !== 'intl_stock' && cls !== 'real_estate') continue;
+    const value = (h.institutionValue || 0) * equityFraction(h);
+    if (value <= 0) continue;
+    const ticker = (h.ticker || '').toUpperCase();
+    const map = SECTOR_MAP[ticker];
+    if (!map) continue;
+    for (const [sector, frac] of Object.entries(map)) {
+      (bySector[sector] = bySector[sector] || []).push({ ticker, name: h.name || ticker, value: value * frac });
+    }
+  }
+  for (const k of Object.keys(bySector)) bySector[k].sort((a, b) => b.value - a.value);
+  return bySector;
+}
