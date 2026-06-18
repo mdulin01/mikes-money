@@ -67,9 +67,12 @@ function computeBilling(clientId, ents) {
 }
 
 const card = 'bg-slate-800 border border-slate-700 rounded-xl p-4';
-const inputCls = 'bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500';
+const inputCls = 'bg-slate-900 border border-slate-700 rounded-lg px-2 h-9 text-sm text-slate-200 focus:outline-none focus:border-emerald-500';
 const btnCls = 'px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white';
 const btnGhost = 'px-2 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700';
+const selectCls = inputCls + ' appearance-none pr-8 cursor-pointer';
+const chevron = { backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center' };
+
 
 export default function Business({ data, updateConfig }) {
   const biz = data?.business || {};
@@ -240,7 +243,7 @@ export default function Business({ data, updateConfig }) {
         <div className="flex flex-wrap gap-2 items-end mb-4">
           <label className="text-xs text-slate-500">Date<br /><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputCls} /></label>
           <label className="text-xs text-slate-500">Client<br />
-            <select value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} className={inputCls}>
+            <select value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} className={selectCls} style={chevron}>
               {Object.entries(CLIENTS).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
             </select></label>
           <label className="text-xs text-slate-500">Hours<br /><input type="number" step="0.25" min="0" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} className={inputCls + ' w-20'} /></label>
@@ -282,7 +285,7 @@ export default function Business({ data, updateConfig }) {
         <div className="flex flex-wrap gap-2 items-end mb-4">
           <label className="text-xs text-slate-500">Date<br /><input type="date" value={exp.date} onChange={(e) => setExp({ ...exp, date: e.target.value })} className={inputCls} /></label>
           <label className="text-xs text-slate-500">Category<br />
-            <select value={exp.category} onChange={(e) => setExp({ ...exp, category: e.target.value })} className={inputCls}>
+            <select value={exp.category} onChange={(e) => setExp({ ...exp, category: e.target.value })} className={selectCls} style={chevron}>
               {EXPENSE_CATS.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
             </select></label>
           {exp.category === 'mileage' ? (
@@ -378,7 +381,7 @@ export default function Business({ data, updateConfig }) {
           </div>
         )}
         <div className="flex flex-wrap gap-2 items-end">
-          <select value={gmaForm.type} onChange={(e) => setGmaForm({ ...gmaForm, type: e.target.value })} className={inputCls}>
+          <select value={gmaForm.type} onChange={(e) => setGmaForm({ ...gmaForm, type: e.target.value })} className={selectCls} style={chevron}>
             <option value="charge">charge</option><option value="payment">payment</option><option value="fee">fee</option>
           </select>
           <input type="date" value={gmaForm.date} onChange={(e) => setGmaForm({ ...gmaForm, date: e.target.value })} className={inputCls} />
