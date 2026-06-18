@@ -22,6 +22,23 @@ const PAYERS = [
 ];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// ── Business-expense categories (Schedule C) + 2026 IRS standard business mileage rate ──
+const MILEAGE_RATE = 0.725; // $/mile, IRS 2026 business standard rate (eff. 1/1/2026)
+const EXPENSE_CATS = [
+  { id: 'mileage',   label: 'Mileage',                 emoji: '🚗' },
+  { id: 'supplies',  label: 'Supplies',                emoji: '📦' },
+  { id: 'software',  label: 'Software / Subscriptions', emoji: '💻' },
+  { id: 'prof-dev',  label: 'Professional Development', emoji: '🎓' },
+  { id: 'licensing', label: 'Licensing / Credentials',  emoji: '🪪' },
+  { id: 'meals',     label: 'Meals',                   emoji: '🍽️' },
+  { id: 'travel',    label: 'Travel',                  emoji: '✈️' },
+  { id: 'equipment', label: 'Equipment',               emoji: '🛠️' },
+  { id: 'office',    label: 'Office / Home Office',     emoji: '🏠' },
+  { id: 'insurance', label: 'Insurance',               emoji: '🛡️' },
+  { id: 'dues',      label: 'Dues / Memberships',       emoji: '🎟️' },
+  { id: 'other',     label: 'Other',                   emoji: '•' },
+];
+
 // Monday-start week key, local time.
 function weekKeyOf(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -49,7 +66,7 @@ function computeBilling(clientId, ents) {
   return { totalHrs, amount: weeks.reduce((s, w) => s + w.amt, 0), weeks };
 }
 
-const card = 'bg-slate-800/60 border border-slate-700 rounded-xl p-4';
+const card = 'bg-slate-800 border border-slate-700 rounded-xl p-4';
 const inputCls = 'bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500';
 const btnCls = 'px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white';
 const btnGhost = 'px-2 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700';
@@ -109,6 +126,30 @@ export default function Business({ data, updateConfig }) {
   }, [monthEntries]);
 
   // ── Invoices ──
+  // ── Business expenses (incl. mileage) ──
+  const expenses = biz.expenses || [];
+  const saveExpenses = (next) => updateConfig({ business: { ...biz, expenses: next } });
+  const [exp, setExp] = useState({ date: toLocalDateStr(), category: 'mileage', amount: '', miles: '', rate: MILEAGE_RATE, note: '' });
+  const expMileageAmt = Math.round(Number(exp.miles || 0) * Number(exp.rate || 0) * 100) / 100;
+  const addExpense = () => {
+    const isMileage = exp.category === 'mileage';
+    const amount = isMileage ? expMileageAmt : Number(exp.amount || 0);
+    if (!exp.date || !amount) return;
+    const entry = { id: crypto.randomUUID(), date: exp.date, category: exp.category, amount, note: exp.note };
+    if (isMileage) { entry.miles = Number(exp.miles); entry.rate = Number(exp.rate || MILEAGE_RATE); }
+    saveExpenses([...expenses, entry]);
+    setExp({ ...exp, amount: '', miles: '', note: '' });
+  };
+  const monthExpenses = expenses.filter((e) => (e.date || '').startsWith(month)).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const expByWeek = (() => {
+    const g = {};
+    for (const e of monthExpenses) { const k = weekKeyOf(e.date); (g[k] = g[k] || []).push(e); }
+    return Object.entries(g).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  })();
+  const monthExpTotal = monthExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const monthMiles = monthExpenses.reduce((s, e) => s + (e.miles || 0), 0);
+  const ytdExpTotal = expenses.filter((e) => (e.date || '').startsWith(String(year))).reduce((s, e) => s + (e.amount || 0), 0);
+
   const saveInvoices = (next) => updateConfig({ business: { ...biz, invoices: next } });
   const createInvoice = (cid) => {
     const ents = monthEntries.filter((e) => e.client === cid);
@@ -229,6 +270,61 @@ export default function Business({ data, updateConfig }) {
             <button onClick={() => createInvoice(b.cid)} className={btnCls}>🧾 Invoice</button>
           </div>
         ))}
+      </div>
+
+      {/* Business expenses (incl. mileage) */}
+      <div className={card}>
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+          <h2 className="font-semibold text-slate-200">Business expenses</h2>
+          <div className="text-sm text-slate-400">{month}: <span className="mono-nums text-rose-300 font-semibold">{money(monthExpTotal, { cents: true })}</span>{monthMiles > 0 ? <span className="text-slate-500"> · {monthMiles.toLocaleString()} mi</span> : null}</div>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">Log deductible Schedule C expenses weekly. Mileage uses the {year} IRS business rate (${MILEAGE_RATE}/mi). YTD expenses: {money(ytdExpTotal)}.</p>
+        <div className="flex flex-wrap gap-2 items-end mb-4">
+          <label className="text-xs text-slate-500">Date<br /><input type="date" value={exp.date} onChange={(e) => setExp({ ...exp, date: e.target.value })} className={inputCls} /></label>
+          <label className="text-xs text-slate-500">Category<br />
+            <select value={exp.category} onChange={(e) => setExp({ ...exp, category: e.target.value })} className={inputCls}>
+              {EXPENSE_CATS.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+            </select></label>
+          {exp.category === 'mileage' ? (
+            <>
+              <label className="text-xs text-slate-500">Miles<br /><input type="number" step="1" min="0" value={exp.miles} onChange={(e) => setExp({ ...exp, miles: e.target.value })} className={inputCls + ' w-24'} /></label>
+              <label className="text-xs text-slate-500">Rate $/mi<br /><input type="number" step="0.001" min="0" value={exp.rate} onChange={(e) => setExp({ ...exp, rate: e.target.value })} className={inputCls + ' w-20'} /></label>
+              <div className="text-xs text-slate-500 pb-1.5">= <span className="mono-nums text-slate-200">{money(expMileageAmt, { cents: true })}</span></div>
+            </>
+          ) : (
+            <label className="text-xs text-slate-500">Amount<br /><input type="number" step="0.01" min="0" placeholder="$" value={exp.amount} onChange={(e) => setExp({ ...exp, amount: e.target.value })} className={inputCls + ' w-24'} /></label>
+          )}
+          <label className="text-xs text-slate-500 flex-1 min-w-[140px]">Note<br /><input value={exp.note} onChange={(e) => setExp({ ...exp, note: e.target.value })} className={inputCls + ' w-full'} /></label>
+          <button onClick={addExpense} className={btnCls}>＋ Add</button>
+        </div>
+        {monthExpenses.length === 0 ? <div className="text-sm text-slate-500">No expenses logged for {month}.</div> : (
+          <div className="space-y-3">
+            {expByWeek.map(([wk, items]) => {
+              const wkTotal = items.reduce((s, e) => s + (e.amount || 0), 0);
+              return (
+                <div key={wk}>
+                  <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                    <span>Week of {wk}</span>
+                    <span className="mono-nums">{money(wkTotal, { cents: true })}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {items.map((e) => {
+                      const cat = EXPENSE_CATS.find((c) => c.id === e.category) || { label: e.category, emoji: '•' };
+                      return (
+                        <div key={e.id} className="flex items-center gap-3 text-sm py-1 border-b border-slate-700/40">
+                          <span className="mono-nums text-slate-500 w-24">{e.date}</span>
+                          <span className="text-slate-300 flex-1">{cat.emoji} {cat.label}{e.miles ? <span className="text-slate-500"> — {e.miles.toLocaleString()} mi @ ${e.rate}</span> : null}{e.note ? <span className="text-slate-500"> — {e.note}</span> : null}</span>
+                          <span className="mono-nums text-rose-300">{money(e.amount, { cents: true })}</span>
+                          <button onClick={() => saveExpenses(expenses.filter((x) => x.id !== e.id))} className={btnGhost}>✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className={card}>
