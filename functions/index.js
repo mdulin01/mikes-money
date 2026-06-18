@@ -281,7 +281,11 @@ async function snapshotNetWorthNow() {
 
   let cash = 0, investments = 0, credit = 0, loan = 0, mortgage = 0, other = 0;
 
+  // Exclude accounts the user toggled to ignore (e.g. duplicate Plaid links).
+  const ignored = new Set(configSnap.exists ? (configSnap.data().ignoredAccounts || []) : []);
+
   for (const doc of acctsSnap.docs) {
+    if (ignored.has(doc.id)) continue;
     const a = doc.data();
     const bal = a.balance || 0;
     switch (a.type) {
@@ -297,7 +301,7 @@ async function snapshotNetWorthNow() {
   // Holdings total (some Plaid accounts report investment balance differently;
   // we take whichever is higher to avoid double-counting or missing positions)
   const holdingsTotal = holdingsSnap.docs.reduce(
-    (s, d) => s + (d.data().institutionValue || 0), 0,
+    (s, d) => ignored.has(d.data().accountId) ? s : s + (d.data().institutionValue || 0), 0,
   );
   if (holdingsTotal > investments) investments = holdingsTotal;
 
