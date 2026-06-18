@@ -229,7 +229,7 @@ function Tile({ label, value, big, tone = 'text-slate-100', hint, className = ''
       <div className="text-[11px] text-slate-400 uppercase tracking-wide truncate">{label}</div>
       <div
         className={`font-bold mono-nums mt-1 leading-none tracking-tight tabular-nums whitespace-nowrap ${tone}`}
-        style={{ fontSize: big ? 'clamp(1.5rem, 7vw, 2rem)' : 'clamp(1.05rem, 5vw, 1.5rem)' }}
+        style={{ fontSize: 'clamp(1.05rem, 5vw, 1.5rem)' }}
       >{value}</div>
       {hint && <div className="text-[11px] text-slate-500 mt-1 truncate">{hint}</div>}
     </div>
