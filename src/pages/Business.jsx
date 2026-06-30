@@ -1,16 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where, limit } from 'firebase/firestore';
-import { db } from '../firebase-config';
+import { db, auth } from '../firebase-config';
 import { COLLECTIONS } from '../constants';
 import { money } from '../utils/format';
 import { toLocalDateStr, toLocalMonthStr } from '../utils/dateUtils';
+import { downloadInvoice, invoiceBase64 } from '../utils/invoicePdf';
+
+// Activity types for time entries — drive the per-week itemization on invoices.
+const ACTIVITIES = [
+  { id: 'clinical',  label: 'Clinical services' },
+  { id: 'vbc',       label: 'Value-based care (VBC)' },
+  { id: 'referral',  label: 'Referral strategy' },
+  { id: 'dashboard', label: 'Dashboard review & development' },
+  { id: 'meeting',   label: 'Meeting' },
+  { id: 'admin',     label: 'Administrative' },
+  { id: 'other',     label: 'Other' },
+];
+const activityLabel = (id) => (ACTIVITIES.find((a) => a.id === id) || {}).label || 'Clinical services';
 
 // ── Client billing rules (ported from the mikedulinmd portal timesheet; portal retires) ──
 const CLIENTS = {
-  avance: { label: 'Avance Care', type: 'weekly-min', rate: 250, minHrs: 10, desc: '$250/hr · 10 hr/wk minimum' },
-  triad:  { label: 'Triad Primary Care', type: 'weekly-tier', t1Rate: 150, t1Hrs: 16, t2Rate: 200, desc: '$150/hr first 16 hr/wk · $200/hr above' },
-  gma:    { label: 'Gray Matter Analytics', type: 'retainer', amount: 1000, desc: '$1,000/mo retainer' },
-  unc:    { label: 'UNC Charlotte', type: 'flat', amount: 2500, desc: 'Flat $2,500 / quarter' },
+  avance: { label: 'Avance Care', type: 'weekly-min', rate: 250, minHrs: 10, desc: '$250/hr · 10 hr/wk minimum',
+            greeting: 'Dr. Steventon —', to: ['asteventon@avancecare.com'], cc: ['ap@avancecare.com'] },
+  triad:  { label: 'Triad Primary Care', type: 'weekly-tier', t1Rate: 150, t1Hrs: 16, t2Rate: 200, desc: '$150/hr first 16 hr/wk · $200/hr above',
+            greeting: 'Hello —', to: [], cc: [] },
+  gma:    { label: 'Gray Matter Analytics', type: 'retainer', amount: 1000, desc: '$1,000/mo retainer',
+            greeting: 'Sheila, Louise —', to: ['stalton@graymatteranalytics.com'], cc: ['ltilmon@graymatteranalytics.com'] },
+  unc:    { label: 'UNC Charlotte', type: 'flat', amount: 2500, desc: 'Flat $2,500 / quarter',
+            greeting: 'Hello —', to: [], cc: [] },
 };
 
 // How each payer shows up in bank transactions (BOA strips the sender on book wires — TPC confirmed).
@@ -110,7 +127,7 @@ export default function Business({ data, updateConfig }) {
   const maxMonth = new Date().getMonth();
 
   // ── Timesheet state ──
-  const [form, setForm] = useState({ date: toLocalDateStr(), client: 'avance', hours: '', note: '' });
+  const [form, setForm] = useState({ date: toLocalDateStr(), client: 'avance', activity: 'clinical', hours: '', note: '' });
   const saveHours = (next) => updateConfig({ business: { ...biz, hours: next } });
   const addEntry = () => {
     if (!form.date || !Number(form.hours)) return;
@@ -154,32 +171,89 @@ export default function Business({ data, updateConfig }) {
   const ytdExpTotal = expenses.filter((e) => (e.date || '').startsWith(String(year))).reduce((s, e) => s + (e.amount || 0), 0);
 
   const saveInvoices = (next) => updateConfig({ business: { ...biz, invoices: next } });
-  const createInvoice = (cid) => {
+  const setInvoiceStatus = (id, status) => saveInvoices(invoices.map((i) => i.id === id ? { ...i, status, [status + 'At']: new Date().toISOString() } : i));
+
+  // ── Invoice number + draft state ──
+  const [invoiceNo, setInvoiceNo] = useState(biz.nextInvoiceNo || 1108);
+  useEffect(() => { if (biz.nextInvoiceNo) setInvoiceNo(biz.nextInvoiceNo); }, [biz.nextInvoiceNo]);
+  const [drafting, setDrafting] = useState(null); // cid currently drafting
+  const [draftMsg, setDraftMsg] = useState(null); // { ok, text }
+
+  const fmtLong = (ds) => new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  const fmtMonthYear = (ym) => new Date(ym + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  // Build the structured invoice (weeks → activity items) the PDF + email need.
+  const buildInvoiceData = (cid, no) => {
+    const c = CLIENTS[cid];
     const ents = monthEntries.filter((e) => e.client === cid);
     const bill = computeBilling(cid, ents);
-    const inv = {
-      id: crypto.randomUUID(), client: cid, label: CLIENTS[cid].label, period: month,
-      hours: bill.totalHrs, amount: bill.amount, status: 'draft', createdAt: new Date().toISOString(),
-      lines: bill.flat
-        ? [{ desc: CLIENTS[cid].desc, amt: bill.amount }]
-        : bill.weeks.map((w) => ({ desc: 'Week of ' + w.wk + ': ' + w.detail, amt: w.amt })),
+    const dates = ents.map((e) => e.date).filter(Boolean).sort();
+    const periodLabel = dates.length
+      ? `${fmtLong(dates[0])} – ${fmtLong(dates[dates.length - 1])}, ${year}`
+      : fmtMonthYear(month);
+    const subjectPeriod = fmtMonthYear(month);
+
+    let weeks;
+    if (c.type === 'flat' || c.type === 'retainer') {
+      weeks = [{ label: periodLabel, items: [{ desc: c.desc, amtOverride: c.amount }] }];
+    } else {
+      const byWeek = {};
+      for (const e of ents) { const k = weekKeyOf(e.date); (byWeek[k] = byWeek[k] || []).push(e); }
+      weeks = Object.keys(byWeek).sort().map((k) => {
+        const acts = {};
+        for (const e of byWeek[k]) { const a = e.activity || 'clinical'; acts[a] = (acts[a] || 0) + Number(e.hours); }
+        const items = ACTIVITIES.filter((a) => acts[a.id]).map((a) => ({ desc: a.label, hours: acts[a.id] }));
+        const wkHours = items.reduce((s, i) => s + i.hours, 0);
+        if (c.type === 'weekly-min' && wkHours < c.minHrs)
+          items.push({ desc: `Weekly minimum (${c.minHrs} hr/wk)`, hours: c.minHrs - wkHours });
+        return { label: 'Week of ' + fmtLong(k), items };
+      });
+      // Reconcile the line-item total against computeBilling (covers tiered pricing, etc.).
+      const rate = c.rate || c.t1Rate || 0;
+      const itemized = weeks.reduce((s, w) => s + w.items.reduce((t, i) => t + (i.amtOverride != null ? i.amtOverride : i.hours * rate), 0), 0);
+      if (Math.abs(itemized - bill.amount) > 0.5 && weeks.length)
+        weeks[weeks.length - 1].items.push({ desc: 'Tier / rate adjustment', amtOverride: bill.amount - itemized });
+    }
+    return {
+      invoiceNo: no, period: periodLabel, subjectPeriod,
+      issued: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      billTo: { name: c.label, attn: 'Attn: Accounts Payable' },
+      rate: c.rate || c.t1Rate || 0, weeks,
     };
-    saveInvoices([inv, ...invoices]);
   };
-  const setInvoiceStatus = (id, status) => saveInvoices(invoices.map((i) => i.id === id ? { ...i, status, [status + 'At']: new Date().toISOString() } : i));
-  const printInvoice = (inv) => {
-    const w = window.open('', '_blank');
-    const rows = inv.lines.map((l) => '<tr><td>' + l.desc + '</td><td>$' + l.amt.toLocaleString() + '</td></tr>').join('');
-    w.document.write('<html><head><title>Invoice — ' + inv.label + ' — ' + inv.period + '</title>'
-      + '<style>body{font-family:Georgia,serif;max-width:680px;margin:40px auto;color:#111}h1{font-size:22px;border-bottom:2px solid #111;padding-bottom:8px}table{width:100%;border-collapse:collapse;margin:20px 0}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}td:last-child,th:last-child{text-align:right}.tot{font-weight:bold;font-size:18px}.muted{color:#666;font-size:13px}</style></head><body>'
-      + '<h1>Michael Dulin, MD — Consulting Services</h1>'
-      + '<p class="muted">Invoice ' + inv.id.slice(0, 8).toUpperCase() + ' · Period: ' + inv.period + ' · Issued: ' + new Date(inv.createdAt).toLocaleDateString() + '</p>'
-      + '<p><b>Bill to:</b> ' + inv.label + '</p>'
-      + '<table><tr><th>Description</th><th>Amount</th></tr>' + rows
-      + '<tr class="tot"><td>Total' + (inv.hours ? ' (' + inv.hours + ' hrs)' : '') + '</td><td>$' + inv.amount.toLocaleString() + '</td></tr></table>'
-      + '<p class="muted">Payment due within 30 days. Thank you.</p>'
-      + '<scr' + 'ipt>window.print()</scr' + 'ipt></body></html>');
-    w.document.close();
+
+  // PDF download only (no email).
+  const downloadPdf = (cid) => downloadInvoice(buildInvoiceData(cid, Number(invoiceNo) || 1108));
+  const redownload = (inv) => inv.data ? downloadInvoice(inv.data) : null;
+
+  // Generate the PDF + create a Gmail draft with it attached.
+  const generateAndDraft = async (cid) => {
+    const c = CLIENTS[cid];
+    const no = Number(invoiceNo) || 1108;
+    setDrafting(cid); setDraftMsg(null);
+    try {
+      const data = buildInvoiceData(cid, no);
+      const { base64, totalHours, totalAmt, filename } = invoiceBase64(data);
+      const subject = `Dulin Invoice — ${data.subjectPeriod} (Invoice #${no})`;
+      const body = `${c.greeting}\n\nPlease find attached my invoice for ${data.subjectPeriod} (Invoice #${no}), total ${money(totalAmt)}, with hours itemized by week.\n\nThanks again for the opportunity.\n\nMike Dulin\n704-641-2157 (cell)`;
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/invoice-draft', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, to: c.to, cc: c.cc, subject, body, filename, pdfBase64: base64 }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'draft failed');
+      const inv = {
+        id: crypto.randomUUID(), client: cid, label: c.label, period: data.period,
+        invoiceNo: no, hours: totalHours, amount: totalAmt, status: 'drafted',
+        createdAt: new Date().toISOString(), draftId: j.draftId, data,
+      };
+      updateConfig({ business: { ...biz, invoices: [inv, ...invoices], nextInvoiceNo: no + 1 } });
+      setInvoiceNo(no + 1);
+      setDraftMsg({ ok: true, text: `✉️ Draft created in Gmail (#${no}, ${money(totalAmt)}) — open Gmail → Drafts to review & send.` });
+    } catch (e) {
+      setDraftMsg({ ok: false, text: '⚠️ ' + e.message });
+    } finally { setDrafting(null); }
   };
 
   // ── GMA receivable ledger (1.5%/mo + $75 late fee on outstanding balance) ──
@@ -246,6 +320,10 @@ export default function Business({ data, updateConfig }) {
             <select value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} className={selectCls} style={chevron}>
               {Object.entries(CLIENTS).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
             </select></label>
+          <label className="text-xs text-slate-500">Activity<br />
+            <select value={form.activity} onChange={(e) => setForm({ ...form, activity: e.target.value })} className={selectCls} style={chevron}>
+              {ACTIVITIES.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+            </select></label>
           <label className="text-xs text-slate-500">Hours<br /><input type="number" step="0.25" min="0" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} className={inputCls + ' w-20'} /></label>
           <label className="text-xs text-slate-500 flex-1 min-w-[140px]">Note<br /><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className={inputCls + ' w-full'} /></label>
           <button onClick={addEntry} className={btnCls}>＋ Log</button>
@@ -255,24 +333,46 @@ export default function Business({ data, updateConfig }) {
             {monthEntries.map((e) => (
               <div key={e.id} className="flex items-center gap-3 text-sm py-1 border-b border-slate-700/40">
                 <span className="mono-nums text-slate-500 w-24">{e.date}</span>
-                <span className="text-slate-300 flex-1">{(CLIENTS[e.client] || {}).label || e.client}{e.note ? <span className="text-slate-500"> — {e.note}</span> : null}</span>
+                <span className="text-slate-300 flex-1">{(CLIENTS[e.client] || {}).label || e.client}<span className="text-slate-500"> · {activityLabel(e.activity)}</span>{e.note ? <span className="text-slate-500"> — {e.note}</span> : null}</span>
                 <span className="mono-nums text-slate-200">{e.hours} hr</span>
                 <button onClick={() => saveHours(hours.filter((h) => h.id !== e.id))} className={btnGhost}>✕</button>
               </div>
             ))}
           </div>
         )}
-        {billingByClient.map((b) => (
-          <div key={b.cid} className="flex items-center justify-between bg-slate-900/60 rounded-lg px-3 py-2 mb-2">
-            <div className="text-sm">
-              <span className="text-slate-200 font-medium">{CLIENTS[b.cid].label}</span>
-              <span className="text-slate-500"> · {b.totalHrs} hr → </span>
-              <span className="mono-nums text-emerald-400 font-semibold">{money(b.amount)}</span>
-              <div className="text-xs text-slate-500">{CLIENTS[b.cid].desc}</div>
-            </div>
-            <button onClick={() => createInvoice(b.cid)} className={btnCls}>🧾 Invoice</button>
+        {billingByClient.length > 0 && (
+          <div className="flex items-center gap-2 mb-2 text-xs text-slate-500">
+            <span>Next invoice #</span>
+            <input type="number" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={inputCls + ' w-24'} />
           </div>
-        ))}
+        )}
+        {billingByClient.map((b) => {
+          const c = CLIENTS[b.cid];
+          const canEmail = c.to && c.to.length;
+          return (
+            <div key={b.cid} className="flex items-center justify-between bg-slate-900/60 rounded-lg px-3 py-2 mb-2 flex-wrap gap-2">
+              <div className="text-sm">
+                <span className="text-slate-200 font-medium">{c.label}</span>
+                <span className="text-slate-500"> · {b.totalHrs} hr → </span>
+                <span className="mono-nums text-emerald-400 font-semibold">{money(b.amount)}</span>
+                <div className="text-xs text-slate-500">{c.desc}{canEmail ? ` · to ${c.to.join(', ')}` : ' · no recipients set'}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => downloadPdf(b.cid)} className={btnGhost} title="Download the invoice PDF">⬇︎ PDF</button>
+                <button onClick={() => generateAndDraft(b.cid)} disabled={!canEmail || drafting === b.cid}
+                  className={btnCls + (!canEmail || drafting === b.cid ? ' opacity-50 cursor-not-allowed' : '')}
+                  title={canEmail ? 'Generate the PDF and create a Gmail draft' : 'Add recipients for this client first'}>
+                  {drafting === b.cid ? '… drafting' : '✉️ Invoice + email draft'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {draftMsg && (
+          <div className={'text-sm rounded-lg px-3 py-2 mt-1 ' + (draftMsg.ok ? 'bg-emerald-900/40 text-emerald-200' : 'bg-rose-900/40 text-rose-200')}>
+            {draftMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Business expenses (incl. mileage) */}
@@ -340,9 +440,9 @@ export default function Business({ data, updateConfig }) {
                 <span className="text-slate-200 flex-1">{inv.label}</span>
                 <span className="mono-nums text-slate-100 font-medium">{money(inv.amount)}</span>
                 <span className={'text-xs px-2 py-0.5 rounded-full ' + (inv.status === 'paid' ? 'bg-emerald-900/60 text-emerald-300' : inv.status === 'sent' ? 'bg-sky-900/60 text-sky-300' : 'bg-slate-700 text-slate-300')}>{inv.status}</span>
-                {inv.status === 'draft' && <button onClick={() => setInvoiceStatus(inv.id, 'sent')} className={btnGhost}>mark sent</button>}
+                {(inv.status === 'draft' || inv.status === 'drafted') && <button onClick={() => setInvoiceStatus(inv.id, 'sent')} className={btnGhost}>mark sent</button>}
                 {inv.status === 'sent' && <button onClick={() => setInvoiceStatus(inv.id, 'paid')} className={btnGhost}>mark paid</button>}
-                <button onClick={() => printInvoice(inv)} className={btnGhost}>🖨️</button>
+                {inv.data && <button onClick={() => redownload(inv)} className={btnGhost} title="Download PDF">⬇︎</button>}
                 <button onClick={() => saveInvoices(invoices.filter((i) => i.id !== inv.id))} className={btnGhost}>✕</button>
               </div>
             ))}
