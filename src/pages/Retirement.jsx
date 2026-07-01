@@ -5,6 +5,7 @@ import { simulate } from '../utils/monteCarlo';
 import { computeAge } from '../utils/dateUtils';
 import { USER_PROFILE } from '../constants';
 import TransitionTimeline from '../components/TransitionTimeline';
+import RothRmdPlanner from '../components/RothRmdPlanner';
 
 // Current age always computed from birthdate — stays correct as time passes.
 const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
@@ -303,6 +304,9 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
 
       {/* Age-based transition milestones: 59½ IRA draws → IRMAA lookback → Medicare → FRA → RMDs */}
       <TransitionTimeline data={data} updateConfig={updateConfig} investmentsTotal={investmentsTotal} recentTxns={recentTxns} />
+
+      {/* Roth-conversion vs RMD/IRMAA trade-off (ROTH_IRMAA_PLAN.md open items #3/#4) */}
+      <RothRmdPlanner data={data} updateConfig={updateConfig} />
 
     </main>
   );

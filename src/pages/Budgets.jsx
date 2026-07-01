@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { money } from '../utils/format';
 import { toLocalMonthStr, monthStart, monthEnd } from '../utils/dateUtils';
+import { useToast } from '../components/Toast';
 
 // Retirement-target budget (realistic). Totals to ~$11K/mo baseline with slack to $13K.
 const TARGET_BUDGET = {
@@ -32,6 +33,7 @@ function nextNMonths(n, fromStr = toLocalMonthStr()) {
 }
 
 export default function Budgets({ data, recentTxns, setBudget, deleteBudget, updateConfig }) {
+  const toast = useToast();
   const [month, setMonth] = useState(toLocalMonthStr());
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyMonths, setApplyMonths] = useState(8); // May-Dec if run in May
@@ -49,9 +51,10 @@ export default function Budgets({ data, recentTxns, setBudget, deleteBudget, upd
       }
       await updateConfig({ budgets: { ...(data?.budgets || {}), ...patch } });
       setApplyOpen(false);
+      toast(`Target budget applied to ${months.length} months`, 'success');
     } catch (e) {
       console.error(e);
-      alert('Failed to apply budget: ' + e.message);
+      toast('Failed to apply budget: ' + e.message, 'error');
     } finally {
       setApplying(false);
     }

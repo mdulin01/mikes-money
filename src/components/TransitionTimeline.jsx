@@ -23,7 +23,7 @@ const fmt = (dt) => dt.toLocaleDateString('en-US', { month: 'short', year: 'nume
 // IRMAA (single filer) — 2026 brackets from ROTH_IRMAA_PLAN.md (repo root; sourced from
 // IRS/TheFinanceBuff). Thresholds inflation-index yearly (~15–25% higher nominal by 2032);
 // surcharges are Part B + Part D monthly add-ons over the standard premium.
-const IRMAA_TIERS = [
+export const IRMAA_TIERS = [
   { upTo: 109000, b: 0, d: 0, label: '≤ $109k' },
   { upTo: 137000, b: 81.2, d: 14.5, label: '$109–137k' },
   { upTo: 171000, b: 202.9, d: 37.5, label: '$137–171k' },
@@ -31,7 +31,8 @@ const IRMAA_TIERS = [
   { upTo: 500000, b: 446.3, d: 83.3, label: '$205–500k' },
   { upTo: Infinity, b: 487.0, d: 91.0, label: '> $500k' },
 ];
-const tierFor = (magi) => IRMAA_TIERS.find(t => magi <= t.upTo);
+export const tierFor = (magi) => IRMAA_TIERS.find(t => magi <= t.upTo);
+export const tierIndex = (magi) => IRMAA_TIERS.indexOf(tierFor(magi));
 
 export default function TransitionTimeline({ data, updateConfig, investmentsTotal, recentTxns }) {
   const ageNow = computeAgeFractional(BIRTH);

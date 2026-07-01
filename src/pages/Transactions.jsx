@@ -5,10 +5,12 @@ import { humanDate } from '../utils/dateUtils';
 import { CLASSES } from '../constants';
 import { effectiveClass, classify, merchantKeyword } from '../utils/classify';
 import { PROPERTIES, PROPERTY_BY_ID, effectiveProperty } from '../data/properties';
+import { useToast } from '../components/Toast';
 
 const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
 export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, applyRuleToTxns, autoCategorizeAll, amazonOrders = [] }) {
+  const toast = useToast();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
@@ -95,8 +97,8 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
     if (!autoCategorizeAll) return;
     if (!confirm(`Auto-categorize ${uncatCount} uncategorized transactions? High-confidence matches are applied; size-detected rent is flagged for review; anything unmatched stays uncategorized. Your manual picks always win.`)) return;
     setBusy(true);
-    try { const r = await autoCategorizeAll(recentTxns, acctById); alert(`Done: ${r.applied} categorized · ${r.review} flagged for review · ${r.skipped} left uncategorized.`); }
-    catch (e) { alert('Failed: ' + e.message); }
+    try { const r = await autoCategorizeAll(recentTxns, acctById); toast(`Done: ${r.applied} categorized · ${r.review} flagged for review · ${r.skipped} left uncategorized.`, 'success'); }
+    catch (e) { toast('Failed: ' + e.message, 'error'); }
     finally { setBusy(false); }
   }
 

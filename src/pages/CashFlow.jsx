@@ -1,24 +1,37 @@
 import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Legend } from 'recharts';
 import { money } from '../utils/format';
-import { toLocalMonthStr } from '../utils/dateUtils';
+import { toLocalMonthStr, monthStart } from '../utils/dateUtils';
+import { useRangeTxns } from '../hooks/useRangeTxns';
 
 export default function CashFlow({ recentTxns, data, netWorth }) {
-  // Aggregate last 12 months of income vs expense
+  // Full 12-month window query — the 500-txn recentTxns cap rarely covers 12 months.
+  const fromMonth = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 11);
+    return monthStart(toLocalMonthStr(d));
+  }, []);
+  const windowTxns = useRangeTxns(fromMonth);
+
+  // Aggregate last 12 months of income vs expense (IRA draws broken out from earned income).
   const byMonth = useMemo(() => {
+    const ignored = new Set(data?.ignoredAccounts || []);
+    const src = windowTxns ?? recentTxns;
     const buckets = {};
-    for (const t of recentTxns) {
-      if (!t.date || t.category === 'transfer') continue;
+    for (const t of src) {
+      if (!t.date || t.category === 'transfer' || ignored.has(t.accountId)) continue;
       const m = t.date.slice(0, 7);
-      if (!buckets[m]) buckets[m] = { month: m, income: 0, expense: 0 };
-      if (t.amount < 0) buckets[m].income += -t.amount;
-      else buckets[m].expense += t.amount;
+      if (!buckets[m]) buckets[m] = { month: m, income: 0, iraDraw: 0, expense: 0 };
+      if (t.amount < 0) {
+        if (t.category === 'retirement-inc') buckets[m].iraDraw += -t.amount;
+        else buckets[m].income += -t.amount;
+      } else buckets[m].expense += t.amount;
     }
     return Object.values(buckets)
       .sort((a, b) => a.month.localeCompare(b.month))
-      .map(b => ({ ...b, net: b.income - b.expense }))
+      .map(b => ({ ...b, net: b.income + b.iraDraw - b.expense }))
       .slice(-12);
-  }, [recentTxns]);
+  }, [windowTxns, recentTxns, data?.ignoredAccounts]);
 
   // Projected balance next 6 months based on avg net
   const avgNet = byMonth.length > 0
@@ -56,7 +69,8 @@ export default function CashFlow({ recentTxns, data, netWorth }) {
                 <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} tickFormatter={(v) => money(v)} />
                 <Tooltip formatter={(v) => money(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155' }} />
                 <Legend />
-                <Bar dataKey="income" fill="#10b981" />
+                <Bar dataKey="income" name="earned income" stackId="in" fill="#10b981" />
+                <Bar dataKey="iraDraw" name="IRA draw" stackId="in" fill="#0ea5e9" />
                 <Bar dataKey="expense" fill="#f43f5e" />
               </BarChart>
             </ResponsiveContainer>

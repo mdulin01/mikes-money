@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { money } from '../utils/format';
 import { ACCOUNT_TYPES } from '../constants';
 import PlaidLinkButton from '../components/PlaidLinkButton';
+import { useToast } from '../components/Toast';
 
 export default function Accounts({
-  data, allAccounts, ignoredAccountIds,
+  data, allAccounts, ignoredAccountIds, liabilities = [],
   addManualAccount, updateManualAccount, deleteManualAccount,
   toggleAccountIgnored, removePlaidItem,
 }) {
+  const toast = useToast();
   const [showForm, setShowForm] = useState(false);
   const [removing, setRemoving] = useState(null);
   const [form, setForm] = useState({ name: '', type: 'real-estate', side: 'asset', balance: 0 });
@@ -99,7 +101,7 @@ export default function Accounts({
             if (!g.itemId || !removePlaidItem) return;
             if (!window.confirm(`Unlink ${g.institution} and its ${g.accts.length} account${g.accts.length === 1 ? '' : 's'}? This disconnects it from Plaid (your transactions are kept). You can re-add it with "Link account".`)) return;
             setRemoving(g.itemId);
-            try { await removePlaidItem(g.itemId); } catch (e) { window.alert('Remove failed: ' + (e?.message || e)); }
+            try { await removePlaidItem(g.itemId); } catch (e) { toast('Remove failed: ' + (e?.message || e), 'error'); }
             finally { setRemoving(null); }
           };
           return Object.values(groups).map((g) => (
@@ -145,6 +147,45 @@ export default function Accounts({
           </p>
         )}
       </section>
+
+      {/* Debt detail from Plaid liabilities (rates, payments, due dates) — previously synced but never shown */}
+      {liabilities.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-slate-300 mb-2">Debt detail ({liabilities.length})</h2>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 border-b border-slate-700/60">
+                  <th className="text-left px-4 py-2">Account</th>
+                  <th className="text-left px-2 py-2">Kind</th>
+                  <th className="text-right px-2 py-2">Rate</th>
+                  <th className="text-right px-2 py-2">Next / min payment</th>
+                  <th className="text-right px-4 py-2">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {liabilities.map(l => {
+                  const acct = accounts.find(a => a.id === l.accountId);
+                  const rate = l.kind === 'credit'
+                    ? (l.aprs?.find(x => x.apr_type === 'purchase_apr') || l.aprs?.[0])?.apr_percentage
+                    : l.interestRate;
+                  const pay = l.kind === 'mortgage' ? l.nextMonthlyPayment : l.minPayment;
+                  return (
+                    <tr key={l.id || l.accountId} className="border-b border-slate-700/40 last:border-0">
+                      <td className="px-4 py-2 text-slate-200">{acct?.name || l.accountId}{acct?.mask ? ` ····${acct.mask}` : ''}</td>
+                      <td className="px-2 py-2 text-slate-400">{l.kind}{l.rateType ? ` · ${l.rateType}` : ''}</td>
+                      <td className="px-2 py-2 text-right mono-nums">{rate != null ? `${Number(rate).toFixed(2)}%` : '—'}</td>
+                      <td className="px-2 py-2 text-right mono-nums">{pay != null ? money(pay, { cents: true }) : '—'}</td>
+                      <td className="px-4 py-2 text-right text-slate-400 whitespace-nowrap">{l.nextPaymentDueDate || l.maturityDate || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Rates and payment info come from Plaid's liabilities feed (credit cards + mortgages). Mortgage "due" shows maturity date.</p>
+        </section>
+      )}
 
       <section>
         <h2 className="text-sm font-semibold text-slate-300 mb-2">Manual accounts ({manual.length})</h2>

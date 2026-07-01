@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { money, pct } from '../utils/format';
+import { useToast } from '../components/Toast';
 
 const BLANK_FORM = {
   accountName: '',
@@ -17,6 +18,7 @@ export default function Holdings({
   addManualHolding, updateManualHolding, deleteManualHolding, clearManualHoldings,
   data, updateConfig,
 }) {
+  const toast = useToast();
   const [groupBy, setGroupBy] = useState('account');
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
@@ -83,7 +85,7 @@ export default function Holdings({
   const submit = async () => {
     const value = Number(form.institutionValue || derivedValue || 0);
     if (!form.accountName || !value) {
-      alert('Account name and total value are required.');
+      toast('Account name and total value are required.', 'error');
       return;
     }
     const payload = {

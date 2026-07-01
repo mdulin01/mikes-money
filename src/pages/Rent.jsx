@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../firebase-config';
-import { COLLECTIONS } from '../constants';
 import { money } from '../utils/format';
 import { effectiveClass } from '../utils/classify';
 import { PROPERTIES, effectiveProperty } from '../data/properties';
 import { toLocalMonthStr, monthsBetween } from '../utils/dateUtils';
 import { rrSignIn, rrAuth, fetchRR, writeRRPayments, autoMapProperties } from '../utils/rrSync';
+import { useRangeTxns } from '../hooks/useRangeTxns';
 import { useToast } from '../components/Toast';
 
 // Rentals — rent received per property/month from BANK data (Plaid), reconciled and
@@ -21,23 +19,7 @@ export default function Rent({ data, accounts, updateConfig }) {
   const months = useMemo(() => monthsBetween(`${year}-01`, curMonth), [year, curMonth]);
 
   // --- YTD rental-income deposits straight from Firestore (recentTxns caps at 500) ---
-  const [txns, setTxns] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const q = query(
-          collection(db, COLLECTIONS.TRANSACTIONS),
-          where('date', '>=', `${year}-01-01`),
-          orderBy('date', 'desc'),
-        );
-        const snap = await getDocs(q);
-        setTxns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (e) {
-        console.error('rent txn query failed:', e);
-        setTxns([]);
-      }
-    })();
-  }, [year]);
+  const txns = useRangeTxns(`${year}-01-01`);
 
   const acctById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
   const userRules = data?.userRules || [];

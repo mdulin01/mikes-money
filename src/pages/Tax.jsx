@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { money } from '../utils/format';
 import { effectiveClass } from '../utils/classify';
 import { PROPERTIES, effectiveProperty } from '../data/properties';
+import { useRangeTxns } from '../hooks/useRangeTxns';
 
 // 2025 single-filer federal brackets (refine yearly). Std deduction single 2025 = 15000.
 const BRACKETS = [[0,0.10],[11925,0.12],[48475,0.22],[103350,0.24],[197300,0.32],[250525,0.35],[626350,0.37]];
@@ -49,9 +50,15 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
   const year = new Date().getFullYear();
   const monthsElapsed = new Date().getMonth() + 1;
 
+  // Full-year query — recentTxns caps at 500, which silently truncates YTD by late year.
+  // Falls back to recentTxns while loading so the page renders immediately.
+  const yearTxns = useRangeTxns(`${year}-01-01`);
+
   // YTD nets by class from tagged transactions (amount>0 = outflow/expense, <0 = income).
   const ytd = useMemo(() => {
-    const cur = recentTxns.filter(t => (t.date || '').startsWith(String(year)));
+    const ignored = new Set(data?.ignoredAccounts || []);
+    const src = yearTxns ?? recentTxns;
+    const cur = src.filter(t => !ignored.has(t.accountId) && (t.date || '').startsWith(String(year)));
     let bizInc = 0, bizExp = 0, rentInc = 0, rentExp = 0, splitExp = 0, iraInc = 0;
     // Per-property Schedule E breakdown — keyed by propertyId. 'unassigned' bucket holds rental
     // txns with no property tagged (a flag for "go fix this on Transactions page").
@@ -73,7 +80,7 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
     const schC = bizInc - bizExp - splitExp * 0.5;
     const schE = rentInc - rentExp - splitExp * 0.5;
     return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE, iraInc, perProperty };
-  }, [recentTxns, acctById, year, userRules]);
+  }, [yearTxns, recentTxns, acctById, year, userRules, data?.ignoredAccounts]);
 
   const ann = monthsElapsed > 0 ? 12 / monthsElapsed : 1;
   const [projC, setProjC] = useState(Math.round(ytd.schC * ann));
