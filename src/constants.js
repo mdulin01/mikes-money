@@ -31,6 +31,7 @@ export const SECTIONS = [
   { id: 'budgets',     label: 'Budgets',     emoji: '🎯' },
   { id: 'cashflow',    label: 'Cash Flow',   emoji: '💰' },
   { id: 'business',    label: 'Business',    emoji: '💼' },
+  { id: 'rent',        label: 'Rentals',     emoji: '🏘️' },
   { id: 'scenarios',   label: 'Scenarios',   emoji: '🔮' },
   { id: 'tax',         label: 'Tax',         emoji: '🧾' },
 ];
@@ -70,6 +71,7 @@ export const DEFAULT_CATEGORIES = [
   { id: 'licensing',     label: 'Licensing / Credentials', emoji: '🪪', kind: 'expense' },
   { id: 'other-exp',     label: 'Other',          emoji: '📦', kind: 'expense' },
   { id: 'salary',        label: 'Salary',         emoji: '💰', kind: 'income' },
+  { id: 'retirement-inc', label: 'Retirement Income (IRA)', emoji: '🏖️', kind: 'income' },
   { id: 'rental',        label: 'Rental Income',  emoji: '🏘️', kind: 'income' },
   { id: 'investment-inc', label: 'Investment Income', emoji: '📈', kind: 'income' },
   { id: 'other-inc',     label: 'Other Income',   emoji: '💵', kind: 'income' },

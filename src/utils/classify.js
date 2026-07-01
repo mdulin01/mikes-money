@@ -18,6 +18,13 @@ const RULES = [
   //  • Late/manual rent arrives as a money-order COUNTER CREDIT (no payer name) — not auto-attributable;
   //    Liam documents those in rainbow-rentals (payment method per property).
   { kw: ['liam dulin', 'avail des', 'availco', 'avail tenant', 'avail rent', 'move sales inc', 'move sales', 'move, inc'], category: 'rental', klass: 'rental', inflow: true },
+  // ---- RETIREMENT INCOME (monthly IRA distributions started 2026) ----
+  // Explicit distribution descriptors — high confidence.
+  { kw: ['ira distribution', 'ira dist', 'req min dist', 'rmd payout', 'retirement distribution', 'periodic dist'], category: 'retirement-inc', klass: 'personal', inflow: true },
+  // Custodian ACH inflows to checking are usually the monthly IRA draw, but could also be a
+  // taxable-brokerage transfer — flagged needsReview so a wrong guess is one tap to fix.
+  // ✨-save the exact descriptor as a user rule once the first distribution posts.
+  { kw: ['vanguard', 'fid bkg svc', 'fidelity', 'tiaa'], category: 'retirement-inc', klass: 'personal', inflow: true, review: true },
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
@@ -96,7 +103,7 @@ export function classify(txn, account, userRules) {
         category: r.category,
         klass: r.klass || 'personal',
         homeOffice: !!r.homeOffice,
-        conf: 'high',
+        conf: r.review ? 'review' : 'high',
         propertyId: propMatch?.propertyId || null,
       };
     }

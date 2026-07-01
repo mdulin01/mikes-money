@@ -1,0 +1,341 @@
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { db } from '../firebase-config';
+import { COLLECTIONS } from '../constants';
+import { money } from '../utils/format';
+import { effectiveClass } from '../utils/classify';
+import { PROPERTIES, effectiveProperty } from '../data/properties';
+import { toLocalMonthStr, monthsBetween } from '../utils/dateUtils';
+import { rrSignIn, rrAuth, fetchRR, writeRRPayments, autoMapProperties } from '../utils/rrSync';
+import { useToast } from '../components/Toast';
+
+// Rentals — rent received per property/month from BANK data (Plaid), reconciled and
+// auto-synced into rainbow-rentals so rent never has to be hand-entered there again.
+
+const RENTAL_PROPS = PROPERTIES.filter(p => p.schedule === 'rental');
+
+export default function Rent({ data, accounts, updateConfig }) {
+  const toast = useToast();
+  const year = String(new Date().getFullYear());
+  const curMonth = toLocalMonthStr();
+  const months = useMemo(() => monthsBetween(`${year}-01`, curMonth), [year, curMonth]);
+
+  // --- YTD rental-income deposits straight from Firestore (recentTxns caps at 500) ---
+  const [txns, setTxns] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const q = query(
+          collection(db, COLLECTIONS.TRANSACTIONS),
+          where('date', '>=', `${year}-01-01`),
+          orderBy('date', 'desc'),
+        );
+        const snap = await getDocs(q);
+        setTxns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) {
+        console.error('rent txn query failed:', e);
+        setTxns([]);
+      }
+    })();
+  }, [year]);
+
+  const acctById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
+  const userRules = data?.userRules || [];
+  const ignored = useMemo(() => new Set(data?.ignoredAccounts || []), [data?.ignoredAccounts]);
+
+  // Rent deposits: inflows classed rental (rule/user/auto). needsReview kept but flagged.
+  const deposits = useMemo(() => {
+    if (!txns) return [];
+    return txns.filter(t =>
+      !ignored.has(t.accountId) &&
+      (t.amount || 0) < 0 &&
+      (t.category === 'rental' || effectiveClass(t, acctById, userRules) === 'rental'),
+    ).map(t => ({
+      ...t,
+      propId: effectiveProperty(t) || 'unassigned',
+      month: (t.date || '').slice(0, 7),
+    }));
+  }, [txns, ignored, acctById, userRules]);
+
+  // property × month → [deposits]
+  const grid = useMemo(() => {
+    const g = {};
+    for (const d of deposits) {
+      (g[d.propId] = g[d.propId] || {})[d.month] = [...(g[d.propId]?.[d.month] || []), d];
+    }
+    return g;
+  }, [deposits]);
+
+  const unassigned = deposits.filter(d => d.propId === 'unassigned');
+
+  // --- rainbow-rentals connection ---
+  const [rr, setRR] = useState(null);          // { properties, payments }
+  const [rrBusy, setRRBusy] = useState(false);
+  const [rrError, setRRError] = useState(null);
+  const savedMap = data?.rrPropertyMap || null;
+  const [propMap, setPropMap] = useState(savedMap || {});   // mm id → rr id
+
+  const connect = useCallback(async () => {
+    setRRBusy(true); setRRError(null);
+    try {
+      await rrSignIn();
+      const fetched = await fetchRR();
+      setRR(fetched);
+      const map = savedMap && Object.keys(savedMap).length ? savedMap : autoMapProperties(fetched.properties);
+      setPropMap(map);
+      if (!savedMap) updateConfig({ rrPropertyMap: map });
+    } catch (e) {
+      console.error('RR connect failed:', e);
+      setRRError(e?.code === 'auth/unauthorized-domain'
+        ? 'This domain isn’t authorized in the rainbow-rentals Firebase project. Add www.mikesmoney.app (and mikes-money.vercel.app) under Authentication → Settings → Authorized domains in the rainbow-rentals console, then retry.'
+        : (e?.message || 'Connection failed'));
+    } finally {
+      setRRBusy(false);
+    }
+  }, [savedMap, updateConfig]);
+
+  // Reconnect silently if this browser already has an RR session.
+  useEffect(() => {
+    const unsub = rrAuth().onAuthStateChanged(u => { if (u && !rr) connect(); });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rrPropById = useMemo(
+    () => Object.fromEntries((rr?.properties || []).map(p => [String(p.id), p])),
+    [rr],
+  );
+
+  const setMapping = (mmId, rrId) => {
+    const next = { ...propMap, [mmId]: rrId };
+    setPropMap(next);
+    updateConfig({ rrPropertyMap: next });
+  };
+
+  // Deposits present here but missing in rainbow-rentals (per mapped property + rent month).
+  const toSync = useMemo(() => {
+    if (!rr) return [];
+    const out = [];
+    for (const d of deposits) {
+      if (d.propId === 'unassigned') continue;
+      const rrId = propMap[d.propId];
+      if (!rrId) continue;
+      const already = rr.payments.some(p =>
+        p.id === `mm-${d.id}` ||
+        (String(p.propertyId) === String(rrId) && (p.month || (p.datePaid || '').slice(0, 7)) === d.month
+          && (p.status === 'paid' || p.status === 'partial' || !p.status)),
+      );
+      if (!already) out.push(d);
+    }
+    return out;
+  }, [rr, deposits, propMap]);
+
+  // Rent months rainbow-rentals has that bank data doesn't show (manual/money-order rent etc.)
+  const rrOnly = useMemo(() => {
+    if (!rr) return [];
+    const rrIdToMM = Object.fromEntries(Object.entries(propMap).map(([mm, rrId]) => [String(rrId), mm]));
+    return rr.payments.filter(p => {
+      if ((p.incomeType || 'rent') !== 'rent') return false;
+      const m = p.month || (p.datePaid || '').slice(0, 7);
+      if (!m.startsWith(year)) return false;
+      const mmId = rrIdToMM[String(p.propertyId)];
+      if (!mmId) return true;
+      return !(grid[mmId]?.[m]?.length);
+    });
+  }, [rr, propMap, grid, year]);
+
+  const [syncing, setSyncing] = useState(false);
+  const runSync = async () => {
+    if (!rr || toSync.length === 0) return;
+    setSyncing(true);
+    try {
+      const newPayments = toSync.map(d => {
+        const rrProp = rrPropById[String(propMap[d.propId])];
+        return {
+          id: `mm-${d.id}`,
+          source: 'mikes-money',
+          incomeType: 'rent',
+          propertyId: String(propMap[d.propId]),
+          propertyName: rrProp ? `${rrProp.emoji || '🏠'} ${rrProp.name}` : d.propId,
+          tenantName: (rrProp?.tenants || []).map(t => t.name).filter(Boolean).join(', ') || rrProp?.tenant?.name || '',
+          month: d.month,
+          amount: Math.abs(d.amount || 0),
+          datePaid: d.date,
+          status: 'paid',
+          notes: `Auto-synced from Mike's Money (${d.merchantName || d.name || 'bank deposit'})`,
+          createdAt: new Date().toISOString(),
+        };
+      });
+      const all = [...rr.payments, ...newPayments];
+      await writeRRPayments(all);
+      setRR({ ...rr, payments: all });
+      // Auto-fill the Tax page's RR-reconcile rent figures from the now-synced ledger.
+      const rrIdToMM = Object.fromEntries(Object.entries(propMap).map(([mm, rrId]) => [String(rrId), mm]));
+      const rentYTD = {};
+      for (const p of all) {
+        if ((p.incomeType || 'rent') !== 'rent') continue;
+        const m = p.month || (p.datePaid || '').slice(0, 7);
+        if (!m.startsWith(year) || (p.status && p.status !== 'paid' && p.status !== 'partial')) continue;
+        const mmId = rrIdToMM[String(p.propertyId)];
+        if (mmId) rentYTD[mmId] = (rentYTD[mmId] || 0) + (p.amount || 0);
+      }
+      const rrRec = { ...(data?.rrReconcile || {}) };
+      for (const [mmId, rent] of Object.entries(rentYTD)) rrRec[mmId] = { ...(rrRec[mmId] || {}), rent: Math.round(rent) };
+      await updateConfig({ rrReconcile: rrRec });
+      toast?.(`Synced ${newPayments.length} rent payment${newPayments.length === 1 ? '' : 's'} to Rainbow Rentals`, 'success');
+    } catch (e) {
+      console.error('sync failed:', e);
+      toast?.(`Sync failed: ${e?.message || e}`, 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const expectedFor = (mmId) => {
+    const rrProp = rrPropById[String(propMap[mmId])];
+    return rrProp ? parseFloat(rrProp.monthlyRent) || 0 : null;
+  };
+
+  return (
+    <main className="max-w-6xl mx-auto p-4 space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Rentals</h1>
+          <p className="text-slate-400 text-sm">Rent received from bank data · {year} · synced to Rainbow Rentals</p>
+        </div>
+        {!rr ? (
+          <button onClick={connect} disabled={rrBusy}
+            className="text-sm bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg">
+            {rrBusy ? 'Connecting…' : '🌈 Connect Rainbow Rentals'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-emerald-400">🌈 Connected · {rr.payments.length} payments on file</span>
+            {toSync.length > 0 && (
+              <button onClick={runSync} disabled={syncing}
+                className="text-sm bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg">
+                {syncing ? 'Syncing…' : `Sync ${toSync.length} payment${toSync.length === 1 ? '' : 's'} →`}
+              </button>
+            )}
+            {toSync.length === 0 && <span className="text-xs text-slate-500">✓ ledgers match</span>}
+          </div>
+        )}
+      </header>
+
+      {rrError && (
+        <section className="bg-rose-950/40 border border-rose-900/60 rounded-xl p-4 text-sm text-rose-200">
+          {rrError}
+        </section>
+      )}
+
+      {/* Received matrix */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Rent received by month (bank deposits)</h2>
+        {txns === null ? (
+          <p className="text-slate-500 text-sm animate-pulse">Loading transactions…</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500">
+                  <th className="text-left py-1.5 pr-2 sticky left-0 bg-slate-800">Property</th>
+                  {months.map(m => (
+                    <th key={m} className="text-right px-1.5 whitespace-nowrap">{m.slice(5)}</th>
+                  ))}
+                  <th className="text-right pl-2 font-semibold">YTD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RENTAL_PROPS.map(p => {
+                  const row = grid[p.id] || {};
+                  const ytd = Object.values(row).flat().reduce((s, d) => s + Math.abs(d.amount || 0), 0);
+                  const expected = expectedFor(p.id);
+                  return (
+                    <tr key={p.id} className="border-t border-slate-700/60">
+                      <td className="py-2 pr-2 whitespace-nowrap sticky left-0 bg-slate-800">
+                        {p.nickname}
+                        {expected != null && <span className="block text-[10px] text-slate-500">{money(expected)}/mo</span>}
+                      </td>
+                      {months.map(m => {
+                        const cell = row[m] || [];
+                        const amt = cell.reduce((s, d) => s + Math.abs(d.amount || 0), 0);
+                        const review = cell.some(d => d.needsReview);
+                        const short = expected != null && amt > 0 && amt < expected - 5;
+                        return (
+                          <td key={m} className="text-right px-1.5 mono-nums" title={cell.map(d => `${d.date} · ${d.merchantName || d.name}`).join('\n')}>
+                            {amt > 0
+                              ? <span className={short ? 'text-amber-300' : 'text-emerald-300'}>{money(amt)}{review && ' ⚠'}</span>
+                              : <span className={m === curMonth ? 'text-slate-600' : 'text-rose-400/70'}>—</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="text-right pl-2 mono-nums font-semibold text-emerald-300">{money(ytd)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-[11px] text-slate-500 mt-2">
+              ⚠ = auto-detected, needs review on the Transactions page. Red — = no deposit found that month
+              (could be a money-order/manual payment — check Rainbow Rentals). Hover a cell for deposit details.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* Unassigned rental deposits */}
+      {unassigned.length > 0 && (
+        <section className="bg-amber-950/30 border border-amber-900/50 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-amber-200 mb-2">⚠ {unassigned.length} rental deposit{unassigned.length === 1 ? '' : 's'} with no property</h2>
+          <ul className="text-xs text-slate-300 space-y-1">
+            {unassigned.slice(0, 8).map(d => (
+              <li key={d.id} className="flex justify-between">
+                <span className="truncate pr-3">{d.date} · {d.merchantName || d.name}</span>
+                <span className="mono-nums text-emerald-300">{money(Math.abs(d.amount))}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-slate-500 mt-2">Tag these on the Transactions page (property dropdown) — they'll sync on the next pass.</p>
+        </section>
+      )}
+
+      {/* RR-only payments + mapping */}
+      {rr && (
+        <>
+          {rrOnly.length > 0 && (
+            <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-slate-300 mb-2">In Rainbow Rentals but not in bank data ({rrOnly.length})</h2>
+              <ul className="text-xs text-slate-400 space-y-1">
+                {rrOnly.slice(0, 10).map(p => (
+                  <li key={p.id} className="flex justify-between">
+                    <span className="truncate pr-3">{p.month || p.datePaid} · {p.propertyName || '—'} {p.source === 'mikes-money' ? '' : '· manual entry'}</span>
+                    <span className="mono-nums">{money(p.amount || 0)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-500 mt-2">Usually money-order / cash rent Liam logged directly, or a deposit posted to an account Plaid doesn't cover. Fine to leave.</p>
+            </section>
+          )}
+
+          <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <h2 className="text-sm font-semibold text-slate-300 mb-2">Property mapping</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+              {RENTAL_PROPS.map(p => (
+                <label key={p.id} className="flex items-center gap-2">
+                  <span className="w-24 text-slate-400 shrink-0">{p.nickname}</span>
+                  <select value={propMap[p.id] || ''} onChange={e => setMapping(p.id, e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1">
+                    <option value="">— not mapped —</option>
+                    {(rr.properties || []).map(rp => (
+                      <option key={rp.id} value={String(rp.id)}>{rp.emoji || '🏠'} {rp.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </main>
+  );
+}

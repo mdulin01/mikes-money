@@ -4,6 +4,7 @@ import { money, pct } from '../utils/format';
 import { simulate } from '../utils/monteCarlo';
 import { computeAge } from '../utils/dateUtils';
 import { USER_PROFILE } from '../constants';
+import TransitionTimeline from '../components/TransitionTimeline';
 
 // Current age always computed from birthdate — stays correct as time passes.
 const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
@@ -25,7 +26,7 @@ const DEFAULTS = {
   runs: 1000,
 };
 
-export default function Retirement({ netWorth, investmentsTotal, data, updateConfig }) {
+export default function Retirement({ netWorth, investmentsTotal, data, updateConfig, recentTxns }) {
   const saved = data?.retirement || {};
 
   // Starting balance defaults to investments (liquid, growing). Net worth includes home equity which
@@ -299,6 +300,9 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           </ul>
         </div>
       </section>
+
+      {/* Age-based transition milestones: 59½ IRA draws → IRMAA lookback → Medicare → FRA → RMDs */}
+      <TransitionTimeline data={data} updateConfig={updateConfig} investmentsTotal={investmentsTotal} recentTxns={recentTxns} />
 
     </main>
   );

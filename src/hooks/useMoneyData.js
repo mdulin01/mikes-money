@@ -1,4 +1,5 @@
 import { classify } from '../utils/classify';
+import { monthFlows } from '../utils/cashflow';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   doc, setDoc, onSnapshot, deleteField, getDocs,
@@ -387,13 +388,16 @@ export function useMoneyData(user) {
     return plaid + manual;
   }, [accounts, data]);
 
-  const currentMonthSpend = useMemo(() => {
+  // Current-month cash-flow buckets (earned / retirement draws / refunds / spend).
+  // Spend nets credit-card refunds; savings rate uses EARNED income only — see utils/cashflow.js.
+  const flows = useMemo(() => {
     const m = toLocalMonthStr();
     const ignored = new Set(data?.ignoredAccounts || []);
-    return recentTxns
-      .filter(t => !ignored.has(t.accountId) && (t.date || '').startsWith(m) && t.amount > 0 && t.category !== 'transfer' && t.category !== 'taxes')
-      .reduce((sum, t) => sum + t.amount, 0);
-  }, [recentTxns, data]);
+    const acctById = Object.fromEntries(accounts.map(a => [a.id, a]));
+    return monthFlows(recentTxns.filter(t => !ignored.has(t.accountId)), acctById, m);
+  }, [recentTxns, accounts, data]);
+
+  const currentMonthSpend = flows.spend;
 
   // Account ignore-list — filtered out of net worth, holdings, transactions, allocations.
   // Use case: shared / family / business accounts that Plaid pulled but shouldn't count.
@@ -446,6 +450,7 @@ export function useMoneyData(user) {
     netWorth,
     investmentsTotal,
     currentMonthSpend,
+    flows,
     updateConfig,
     setBudget,
     deleteBudget,

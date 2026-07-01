@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { money, signedMoney, pnlClass, pct } from '../utils/format';
-import { toLocalMonthStr, monthStart } from '../utils/dateUtils';
+import { toLocalMonthStr } from '../utils/dateUtils';
 import { ACCOUNT_TYPES } from '../constants';
 import NetWorthChart from '../components/NetWorthChart';
 import NetWorthBreakdown from '../components/NetWorthBreakdown';
@@ -9,8 +9,9 @@ import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRa
 import { useMarketQuotes } from '../hooks/useMarketQuotes';
 import { useDailySnapshot } from '../hooks/useDailySnapshot';
 
-export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, netWorthHistory, snapshotHistory }) {
+export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, flows, netWorthHistory, snapshotHistory }) {
   const month = toLocalMonthStr();
+  const dayOfMonth = new Date().getDate();
 
   // Group accounts by asset side
   const byType = useMemo(() => {
@@ -30,9 +31,9 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     return Object.values(groups).filter(g => g.items.length);
   }, [accounts, data]);
 
-  const monthIncome = recentTxns
-    .filter(t => (t.date || '') >= monthStart(month) && t.amount < 0 && t.category !== 'transfer')
-    .reduce((s, t) => s + Math.abs(t.amount), 0);
+  // Month cash-flow buckets from useMoneyData (utils/cashflow.js): earned income only —
+  // IRA draws + credit-card refunds are broken out separately so they can't inflate the rate.
+  const monthIncome = flows?.earned || 0;
 
   // Lookup table for accountId → account display info
   const accountById = useMemo(
@@ -48,7 +49,7 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     return `${inst}${tail ? ' ' + tail : ''}`;
   };
 
-  const savingsRate = monthIncome > 0 ? (monthIncome - currentMonthSpend) / monthIncome : 0;
+  const savingsRate = flows?.savingsRate || 0;
 
   const assets = byType.filter(g => g.side === 'asset').reduce((s, g) => s + g.total, 0);
   const liabilities = byType.filter(g => g.side === 'liability').reduce((s, g) => s + g.total, 0);
@@ -130,7 +131,12 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
         <Tile label="Net worth" value={money(netWorth)} big className="col-span-2 lg:col-span-1" tone={pnlClass(netWorth)} />
         <Tile label="Assets" value={money(assets)} tone="text-emerald-400" />
         <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
-        <Tile label="Savings rate (mo)" value={`${(savingsRate * 100).toFixed(0)}%`} tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'} />
+        <Tile
+          label="Savings rate (mo)"
+          value={`${(savingsRate * 100).toFixed(0)}%`}
+          tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'}
+          hint={dayOfMonth <= 10 ? `Only ${dayOfMonth} days of data — settles late-month` : 'Earned income only · excl. IRA draws'}
+        />
       </section>
 
       {/* Retirement readiness + runway */}
@@ -187,7 +193,23 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
       <section className="grid md:grid-cols-3 gap-4">
         <Panel title="This month's spending">
           <div className="text-3xl font-bold mono-nums">{money(currentMonthSpend)}</div>
-          <p className="text-slate-400 text-sm mt-1">vs {money(monthIncome)} income</p>
+          <p className="text-slate-400 text-sm mt-1">vs {money(monthIncome)} earned income</p>
+          {(flows?.retirement > 0 || flows?.refunds > 0) && (
+            <div className="mt-2 pt-2 border-t border-slate-700/60 space-y-1 text-xs text-slate-400">
+              {flows.retirement > 0 && (
+                <div className="flex justify-between">
+                  <span>🏖️ IRA distributions</span>
+                  <span className="mono-nums text-sky-300">{money(flows.retirement)}</span>
+                </div>
+              )}
+              {flows.refunds > 0 && (
+                <div className="flex justify-between">
+                  <span>↩︎ Card refunds (netted vs spend)</span>
+                  <span className="mono-nums text-slate-300">{money(flows.refunds)}</span>
+                </div>
+              )}
+            </div>
+          )}
         </Panel>
         <Panel title="Recent transactions" className="md:col-span-2">
           {recentTxns.length === 0 && <p className="text-slate-500 text-sm">No transactions yet. Link an account to sync.</p>}

@@ -16,10 +16,13 @@ function fedIncomeTax(taxable) {
   }
   return Math.round(t);
 }
-function computeTax(schC, schE, sep) {
+// otherOrdinary: ordinary income that isn't SE income — IRA distributions land here.
+// Fully taxable (fed + NC), no SE tax, no withholding when taken without electing it,
+// so it raises the quarterly set-aside dollar for dollar at the marginal rate.
+function computeTax(schC, schE, sep, otherOrdinary = 0) {
   const seBase = Math.max(0, schC) * 0.9235;
   const seTax = Math.round(Math.min(seBase, SS_BASE) * 0.124 + seBase * 0.029 + Math.max(0, seBase - ADDL_MED_THRESH) * 0.009);
-  const agi = schC + schE - sep - seTax / 2;
+  const agi = schC + schE + otherOrdinary - sep - seTax / 2;
   const fed = fedIncomeTax(Math.max(0, agi - STD_DED));
   const nc = Math.round(Math.max(0, agi - NC_STD) * NC_RATE);
   return { seTax, agi: Math.round(agi), fed, nc, total: fed + seTax + nc };
@@ -49,13 +52,14 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
   // YTD nets by class from tagged transactions (amount>0 = outflow/expense, <0 = income).
   const ytd = useMemo(() => {
     const cur = recentTxns.filter(t => (t.date || '').startsWith(String(year)));
-    let bizInc = 0, bizExp = 0, rentInc = 0, rentExp = 0, splitExp = 0;
+    let bizInc = 0, bizExp = 0, rentInc = 0, rentExp = 0, splitExp = 0, iraInc = 0;
     // Per-property Schedule E breakdown — keyed by propertyId. 'unassigned' bucket holds rental
     // txns with no property tagged (a flag for "go fix this on Transactions page").
     const perProperty = {};
     const ensure = (id) => (perProperty[id] = perProperty[id] || { inc: 0, exp: 0 });
     for (const t of cur) {
       const c = effectiveClass(t, acctById, userRules); const a = t.amount || 0;
+      if (t.category === 'retirement-inc' && a < 0) { iraInc += -a; continue; }
       if (c === 'business') { if (a < 0) bizInc += -a; else bizExp += a; }
       else if (c === 'work-travel') { if (a > 0) bizExp += a; }
       else if (c === 'rental') {
@@ -68,13 +72,16 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
     }
     const schC = bizInc - bizExp - splitExp * 0.5;
     const schE = rentInc - rentExp - splitExp * 0.5;
-    return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE, perProperty };
+    return { bizInc, bizExp, rentInc, rentExp, splitExp, schC, schE, iraInc, perProperty };
   }, [recentTxns, acctById, year, userRules]);
 
   const ann = monthsElapsed > 0 ? 12 / monthsElapsed : 1;
   const [projC, setProjC] = useState(Math.round(ytd.schC * ann));
   const [projE, setProjE] = useState(Math.round(ytd.schE * ann));
-  const proj = useMemo(() => computeTax(projC, projE, sep), [projC, projE, sep]);
+  // IRA distributions: planned annual figure wins (fixed monthly draws are predictable);
+  // falls back to annualizing what's been tagged 'retirement-inc' YTD.
+  const [projIRA, setProjIRA] = useState(tc.iraDistAnnual ?? Math.round(ytd.iraInc * ann));
+  const proj = useMemo(() => computeTax(projC, projE, sep, projIRA), [projC, projE, sep, projIRA]);
 
   const shFedAnnual = Math.round(priorFed * shPct);
   const shStateAnnual = priorState; // NC: prior-year method
@@ -122,13 +129,15 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
       <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <h2 className="font-semibold mb-1">📈 Projected 2026 actual</h2>
         <p className="text-xs text-slate-400 mb-3">From your class-tagged transactions, annualized ({monthsElapsed} mo of data). 2026 is all-1099 with no withholding, so this usually exceeds the floor — set the difference aside for April.</p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
           <label className="text-xs text-slate-400">Projected Schedule C net (business)
             <input type="number" value={projC} onChange={e => setProjC(Number(e.target.value) || 0)} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm" /></label>
           <label className="text-xs text-slate-400">Projected Schedule E net (rental)
             <input type="number" value={projE} onChange={e => setProjE(Number(e.target.value) || 0)} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm" /></label>
+          <label className="text-xs text-slate-400">IRA distributions (annual)
+            <input type="number" value={projIRA} onChange={e => { const v = Number(e.target.value) || 0; setProjIRA(v); save({ iraDistAnnual: v }); }} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm" /></label>
         </div>
-        <div className="text-[11px] text-slate-500 mb-3">YTD tagged: biz income {money(ytd.bizInc)} − exp {money(ytd.bizExp)} · rental {money(ytd.rentInc)} − {money(ytd.rentExp)} · Liam/split {money(ytd.splitExp)} (50/50). Less SEP {money(sep)}.</div>
+        <div className="text-[11px] text-slate-500 mb-3">YTD tagged: biz income {money(ytd.bizInc)} − exp {money(ytd.bizExp)} · rental {money(ytd.rentInc)} − {money(ytd.rentExp)} · IRA dist {money(ytd.iraInc)} · Liam/split {money(ytd.splitExp)} (50/50). Less SEP {money(sep)}. IRA draws are ordinary income (no SE tax, but no withholding either) — they raise the April set-aside at your marginal rate.</div>
         <div className="grid grid-cols-4 gap-2 text-center">
           {[['SE tax', proj.seTax], ['Fed income', proj.fed], ['NC', proj.nc], ['Total', proj.total]].map(([l, v]) => (
             <div key={l} className={`rounded-lg p-2 ${l === 'Total' ? 'bg-blue-900/40 border border-blue-700' : 'bg-slate-900/50'}`}>
@@ -181,8 +190,8 @@ export default function Tax({ data, recentTxns = [], accounts = [], updateConfig
         <h2 className="font-semibold mb-1">⚖️ Reconcile vs rainbow-rentals (YTD)</h2>
         <p className="text-xs text-slate-400 mb-3">
           mikes-money and rainbow-rentals keep the books for these properties independently (separate Firebase projects), so they should agree.
-          Open rainbow-rentals &rarr; Dashboard &rarr; YTD and type each property's <span className="text-emerald-300">Income</span> and <span className="text-rose-300">Total Exp</span> below.
-          A row turns green when the two systems match within $25.
+          The <span className="text-emerald-300">RR rent</span> column now auto-fills when you run a sync on the Rentals page; expenses are still typed by hand from
+          rainbow-rentals &rarr; Dashboard &rarr; YTD. A row turns green when the two systems match within $25.
         </p>
         {(() => {
           const rr = data?.rrReconcile || {};
