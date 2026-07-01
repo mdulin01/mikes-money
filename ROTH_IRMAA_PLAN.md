@@ -1,0 +1,86 @@
+# Backdoor Roth + Medicare IRMAA Plan
+
+Status: **planning only** — nothing built into the app yet. Built once the numbers below are filled in and you're ready (target: extend `src/pages/Retirement.jsx` to flag IRMAA tier crossings from projected MAGI, per your stated preference).
+
+Your birthdate on file (`src/constants.js`): **1967-01-11** → you turn **65 on 2032-01-11**, and Medicare Part B/D start that month.
+
+---
+
+## 1. The SEP-IRA problem (read this first)
+
+You have a SEP-IRA (`taxConfig.sepPlanned` in the app). That matters a lot here, because of the **IRA aggregation / pro-rata rule** (IRC §408(d)(2)):
+
+> When you convert any non-Roth IRA money to a Roth, the IRS treats **all** your Traditional, SEP, and SIMPLE IRA balances as **one pot**. The taxable share of every conversion is based on the ratio of pre-tax money to total money across that entire pot — not on which account the converted dollars came from.
+
+Formula:
+
+```
+Taxable % of conversion = (Total pre-tax IRA balance, all accounts, 12/31 of conversion year)
+                           ÷ (Total IRA balance, all accounts, 12/31 of conversion year)
+```
+
+A "backdoor Roth" only works tax-free if your non-Roth IRA balance is **$0** on December 31 of the year you convert. With money sitting in a SEP-IRA, most of every "backdoor" conversion becomes ordinary taxable income — you're not getting the tax-free result the strategy is named for.
+
+**Sensitivity table** — assuming you contribute the 2026 max non-deductible amount ($8,600, see below) and convert it the same year:
+
+| SEP/Traditional IRA balance on 12/31 | % of conversion that's taxable | Taxable $ of an $8,600 conversion |
+|---|---|---|
+| $0 | 0% | $0 |
+| $50,000 | ~85% | ~$7,310 |
+| $100,000 | ~92% | ~$7,930 |
+| $200,000 | ~96% | ~$8,265 |
+| $400,000 | ~98% | ~$8,430 |
+
+The more is sitting in the SEP, the closer this gets to "just paying ordinary income tax on a Roth contribution" — there's little tax-free benefit left.
+
+**I need your actual SEP-IRA balance (plus any other Traditional/Rollover IRA balance) to compute the real number for you** — tell me that and I'll plug it into the table above.
+
+You told me you want to keep the SEP and see the real cost rather than roll it out — that's a legitimate choice if the SEP's ongoing tax-deductible contributions are worth more to you than a clean backdoor Roth. Just go in knowing the conversion isn't tax-free under that setup. (If you ever change your mind: rolling the SEP into a solo 401(k) — if you open one — or an employer 401(k) that accepts incoming rollovers zeroes out the pro-rata pot and makes future backdoor conversions genuinely tax-free. 401(k)/403(b) balances do **not** count in the pro-rata formula, only IRAs.)
+
+---
+
+## 2. Mechanics for 2026
+
+1. **Contribute** to a Traditional IRA (non-deductible, since you're self-employed with a SEP — check deductibility rules with your tax preparer, but non-deductible is the safe default for a backdoor strategy).
+   - 2026 limit: **$7,500** under age 50, **$8,600** for you (50+, includes the $1,100 catch-up).
+2. **File Form 8606** with your 2026 return to record the $8,600 as basis — this is what (partially) shields it from double taxation on conversion.
+3. **Convert** the Traditional IRA balance to Roth — ideally soon after contributing, so there's minimal investment growth to also get taxed.
+4. **Pay tax** on the pro-rata taxable portion (see table above) as ordinary income for 2026.
+5. Repeat each year if you want to keep building Roth balance despite the SEP.
+
+---
+
+## 3. Medicare IRMAA — what it is and your timeline
+
+IRMAA (Income-Related Monthly Adjustment Amount) is a surcharge on Medicare Part B and Part D premiums for higher-income beneficiaries. Key mechanics:
+
+- **2-year lookback**: your premium in a given year is based on your MAGI from **2 years prior**. Your first Medicare year is 2032, so your **2032 premium is set by your 2030 tax return (filed in 2031)**.
+- **MAGI for IRMAA** = AGI (Form 1040, Line 11) + tax-exempt interest. A Roth *conversion* adds to MAGI in the year you convert (the $8,600-ish backdoor conversion above does too, just modestly); qualified Roth *withdrawals* later do not.
+
+**2026 brackets** (single filer, for reference — by 2030/2032 these will be higher due to annual inflation indexing, expect roughly 15–25% higher in nominal dollars by 2032 if inflation runs near historical averages):
+
+| 2026 MAGI (single) | Part B surcharge/mo | Part D surcharge/mo |
+|---|---|---|
+| ≤ $109,000 | $0 | $0 |
+| $109,000–$137,000 | +$81.20 | +$14.50 |
+| $137,000–$171,000 | +$202.90 | +$37.50 |
+| $171,000–$205,000 | +$324.60 | +$60.40 |
+| $205,000–$500,000 | +$446.30 | +$83.30 |
+| $500,000+ | +$487.00 | +$91.00 |
+
+(Joint filers: same surcharge tiers, thresholds roughly double. I don't have your filing status on file — let me know if that's changed.)
+
+**What this means for you:**
+- A small annual backdoor Roth conversion ($8,600 of MAGI) is unlikely on its own to push you into an IRMAA tier — but it adds to whatever else is on your return that year (Schedule C, Schedule E, any larger Roth conversions you might do later).
+- **2030 is your IRMAA-determining year** for Medicare start. If you're ever considering a *larger* Roth conversion (not just the backdoor amount) as part of broader tax planning, doing it before 2029 (so it lands on a return before the 2030 lookback year) avoids it spiking your Day-1 Medicare premium. Conversions from 2030 onward each affect the IRMAA premium 2 years out.
+- Once IRMAA-built into the Retirement planner (next step), it can flag exactly which projected years cross a tier given your modeled income/conversions.
+
+---
+
+## 4. What I still need from you
+
+1. **Current SEP-IRA balance** (and any other Traditional/Rollover IRA balance) — to compute your real pro-rata tax cost instead of the placeholder table.
+2. **Filing status** (single / married filing jointly) — changes which IRMAA threshold column applies.
+3. Confirm whether you want the IRMAA modeling added to `Retirement.jsx`'s Monte Carlo projection now, or after the rental-ownership feature ships.
+
+Sources: [IRS — 401(k) limit increases to $24,500 for 2026, IRA limit increases to $7,500](https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500), [TheFinanceBuff — 2026/2027/2028 Medicare IRMAA Premium MAGI Brackets](https://thefinancebuff.com/medicare-irmaa-income-brackets.html)
