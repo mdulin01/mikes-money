@@ -181,6 +181,30 @@ export default function Rent({ data, accounts, updateConfig }) {
     return rrProp ? parseFloat(rrProp.monthlyRent) || 0 : null;
   };
 
+  // --- Fifth Third true-up ---------------------------------------------------------
+  // Rents mostly arrive in personal BoA (Liam's Zelles) while some rental expenses
+  // also draft from personal accounts — this computes the net rental cash sitting in
+  // personal accounts that belongs in the 5/3 rental-ops account. Transfers INTO 5/3
+  // (category 'transfer', 5/3-side inflow) count as already-settled; 5/3→personal
+  // transfers count the other way.
+  const trueUp = useMemo(() => {
+    if (!txns) return null;
+    const ftIds = new Set(accounts.filter(a => /fifth third|5\/3|53 bank/i.test(`${a.institution || ''} ${a.name || ''}`)).map(a => a.id));
+    let persInc = 0, persExp = 0, toFT = 0, fromFT = 0;
+    for (const t of txns) {
+      if (ignored.has(t.accountId)) continue;
+      const amt = t.amount || 0;
+      if (t.txClass === 'rental' && !ftIds.has(t.accountId)) {
+        if (amt < 0) persInc += -amt; else persExp += amt;
+      }
+      if (t.category === 'transfer' && ftIds.has(t.accountId)) {
+        if (amt < 0) toFT += -amt; else fromFT += amt;
+      }
+    }
+    const owed = persInc - persExp - toFT + fromFT;
+    return { persInc, persExp, toFT, fromFT, owed };
+  }, [txns, accounts, ignored]);
+
   // --- Liam expense-review queue → rainbow-rentals Action Items -------------------
   // Candidates: (a) outflows carrying Liam's name (Cash App to Liam, ACH INDN:LIAM),
   // (b) anything Mike hand-tags as a rental expense on the Transactions page.
@@ -350,6 +374,31 @@ export default function Rent({ data, accounts, updateConfig }) {
             ))}
           </ul>
           <p className="text-[11px] text-slate-500 mt-2">Tag these on the Transactions page (property dropdown) — they'll sync on the next pass.</p>
+        </section>
+      )}
+
+      {/* Fifth Third true-up */}
+      {trueUp && (
+        <section className={`border rounded-xl p-4 ${Math.abs(trueUp.owed) > 500 ? 'bg-amber-950/30 border-amber-900/50' : 'bg-slate-800 border-slate-700'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-300">💸 Fifth Third true-up (YTD)</h2>
+            <div className={`text-lg font-bold mono-nums ${trueUp.owed > 500 ? 'text-amber-300' : trueUp.owed < -500 ? 'text-sky-300' : 'text-emerald-400'}`}>
+              {trueUp.owed > 500 ? `Send ${money(Math.round(trueUp.owed))} → 5/3`
+                : trueUp.owed < -500 ? `5/3 is owed-from: withdraw ${money(Math.round(-trueUp.owed))}`
+                : '✓ settled (within $500)'}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs text-slate-400">
+            <div>Rent received in personal accts<div className="mono-nums text-emerald-300 text-sm">{money(Math.round(trueUp.persInc))}</div></div>
+            <div>Rental expenses paid personally<div className="mono-nums text-rose-300 text-sm">−{money(Math.round(trueUp.persExp))}</div></div>
+            <div>Already transferred → 5/3<div className="mono-nums text-slate-300 text-sm">−{money(Math.round(trueUp.toFT))}</div></div>
+            <div>Transferred 5/3 → personal<div className="mono-nums text-slate-300 text-sm">+{money(Math.round(trueUp.fromFT))}</div></div>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">
+            Net rental cash sitting in personal accounts that belongs in the Fifth Third rental account. Updates automatically
+            as rents/expenses/transfers post. Long-term fix: move recurring rental drafts (Hillcrest + Prairie mortgages,
+            Magnolia HOA) to draft from 5/3, and have Liam Zelle rents to the 5/3 account.
+          </p>
         </section>
       )}
 
