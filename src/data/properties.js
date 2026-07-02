@@ -71,9 +71,10 @@ export const PROPERTY_RULES = [
   // ---- Personal residence (N. Church) — mortgage servicer Guild; confirmed personal 2026-07-01 ----
   { kw: ['guild mortgage', 'guild mtg'], propertyId: 'n-church' },
   // ---- HOAs (unique payees, no amount disambiguation needed) ----
+  // 5/3 bill-pay truncates payees ("WILLIAM DO-", "HOMEOWNERS-") — match the stubs too.
   { kw: ['magnolia place'], propertyId: 'north-elm' },
-  { kw: ['green crest hoa', 'greencrest hoa'], propertyId: 'green-crest' },
-  { kw: ['william douglas'], propertyId: 'prairie-trail' },
+  { kw: ['green crest hoa', 'greencrest hoa', 'pymt to homeowners'], propertyId: 'green-crest' },
+  { kw: ['william douglas', 'pymt to william do'], propertyId: 'prairie-trail' },
 
   // ---- Mortgages (single servicer Rocket) ----
   // Rocket drafts SEMI-MONTHLY (half-payments) as of ~Mar 2026, so the old full-amount

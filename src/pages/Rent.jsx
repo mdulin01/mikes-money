@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { money } from '../utils/format';
-import { effectiveClass } from '../utils/classify';
+import { effectiveClass, effectiveCategory } from '../utils/classify';
 import { PROPERTIES, effectiveProperty } from '../data/properties';
 import { toLocalMonthStr, monthsBetween } from '../utils/dateUtils';
 import { rrSignIn, rrAuth, fetchRR, writeRRPayments, fetchRRReview, writeRRReview, autoMapProperties } from '../utils/rrSync';
@@ -191,14 +191,27 @@ export default function Rent({ data, accounts, updateConfig }) {
   // rainbow-rentals. This queue covers Liam-NAMED bank txns + Mike's manual tags.
   // 'liam dul' deliberately — plain /liam/ matches "WILLIAM DOuglas" HOA.
   const LIAM_RE = /liam dul|cash app\*liam|indn:\s*liam/i;
+  // Fifth Third is the rental-ops account: recurring payees are auto-assigned by rules
+  // (Rocket by loan #, both HOAs incl. 5/3's truncated "WILLIAM DO-"/"HOMEOWNERS-" stubs);
+  // anything ELSE flowing out of it that no rule can place goes to Liam for review.
+  const fifthThirdIds = useMemo(
+    () => new Set(accounts.filter(a => /fifth third|5\/3|53 bank/i.test(`${a.institution || ''} ${a.name || ''}`)).map(a => a.id)),
+    [accounts],
+  );
   const reviewCandidates = useMemo(() => {
     if (!txns) return [];
     return txns.filter(t => {
       if ((t.amount || 0) <= 0 || ignored.has(t.accountId)) return false;
       const label = `${t.merchantName || ''} ${t.name || ''}`;
-      return LIAM_RE.test(label) || (t.txClass === 'rental' && t.classBy === 'user');
+      if (LIAM_RE.test(label)) return true;
+      if (t.txClass === 'rental' && t.classBy === 'user') return true;
+      // 5/3 outflow that isn't a transfer and no rule could pin to a property → review
+      if (fifthThirdIds.has(t.accountId)
+          && effectiveCategory(t, acctById, userRules) !== 'transfer'
+          && !effectiveProperty(t)) return true;
+      return false;
     });
-  }, [txns, ignored]);
+  }, [txns, ignored, fifthThirdIds, acctById, userRules]);
 
   const reviewById = useMemo(() => new Set(rrReview.map(i => i.id)), [rrReview]);
   const toSend = useMemo(
@@ -219,7 +232,9 @@ export default function Rent({ data, accounts, updateConfig }) {
         description: (t.merchantName || t.name || 'Transaction').slice(0, 90),
         detail: (t.name || '').slice(0, 120),
         suggestedPropertyId: t.propertyId && propMap[t.propertyId] ? String(propMap[t.propertyId]) : null,
-        reason: LIAM_RE.test(`${t.merchantName || ''} ${t.name || ''}`) ? 'liam' : 'tagged-rental',
+        reason: LIAM_RE.test(`${t.merchantName || ''} ${t.name || ''}`) ? 'liam'
+          : (t.txClass === 'rental' && t.classBy === 'user') ? 'tagged-rental'
+          : 'fifth-third',
         status: 'pending',
         addedAt: new Date().toISOString(),
       }));
@@ -367,7 +382,9 @@ export default function Rent({ data, accounts, updateConfig }) {
             </ul>
           )}
           <p className="text-[11px] text-slate-500">
-            Auto-detects outflows with Liam's name (Cash App, ACH) + anything you tag as class "Rental" on the Transactions page.
+            Auto-detects outflows with Liam's name (Cash App, ACH), unrecognized outflows from the Fifth Third rental-ops
+            account, + anything you tag as class "Rental" on the Transactions page. Recurring 5/3 payees (mortgages, both
+            HOAs) are auto-assigned and skip the queue.
             Liam approves/dismisses them on rainbow-rentals → Action Items; approved items become expense records there.
             Note: •4793 is Liam's authorized-user card on the Citi AAdvantage account (····3408). Plaid can't tell his swipes
             from yours on that account, so those go to rainbow-rentals via the CardInbox (Rupert reads Citi directly) — this

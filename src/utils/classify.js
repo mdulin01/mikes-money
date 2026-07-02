@@ -41,7 +41,9 @@ const RULES = [
   // Guild Mortgage — Mike's PERSONAL residence (N. Church, owner-occupied; confirmed 2026-07-01). Never a rental deduction.
   { kw: ['guild mortgage', 'guild mtg'], category: 'mortgage' },
   // HOAs that are unambiguously rental-side (the personal-home HOA "governors court" is matched earlier).
-  { kw: ['magnolia place', 'green crest hoa', 'greencrest hoa', 'william douglas'], category: 'hoa', klass: 'rental' },
+  // 5/3 online bill-pay truncates payee names: "PYMT TO WILLIAM DO-" = William Douglas (Prairie HOA, $200/mo),
+  // "PYMT TO HOMEOWNERS-" = Green Crest HOA ($80/mo) — confirmed by Mike 2026-07-01.
+  { kw: ['magnolia place', 'green crest hoa', 'greencrest hoa', 'william douglas', 'pymt to william do', 'pymt to homeowners'], category: 'hoa', klass: 'rental' },
   // ---- COFFEE / DINING ----
   { kw: ['starbucks', 'dunkin', 'peet', 'caribou coffee', 'dutch bros', 'coffee'], category: 'dining' },
   { kw: ['mcdonald', 'chick-fil', 'chipotle', 'panera', 'salata', 'sweetgreen', 'chopt', 'cava ', 'subway', 'wendy', 'taco bell', 'burger', 'pizza', 'restaurant', 'grill', ' cafe', 'doordash', 'uber eats', 'ubereats', 'grubhub', 'tavern', 'bistro', 'kitchen', 'brewery', 'bar &', 'sushi', 'thai', 'mexican'], category: 'dining' },
