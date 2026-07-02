@@ -6,10 +6,11 @@ import { CLASSES } from '../constants';
 import { effectiveClass, classify, merchantKeyword } from '../utils/classify';
 import { PROPERTIES, PROPERTY_BY_ID, effectiveProperty } from '../data/properties';
 import { useToast } from '../components/Toast';
+import RulesHealth from '../components/RulesHealth';
 
 const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
-export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, applyRuleToTxns, autoCategorizeAll, amazonOrders = [] }) {
+export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, removeUserRule, applyRuleToTxns, autoCategorizeAll, amazonOrders = [] }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -217,6 +218,9 @@ export default function Transactions({ data, recentTxns = [], categorizeTransact
           );
         })}
       </ul>
+
+      {/* Audit ✨-saved rules — one overbroad keyword can silently poison months of data */}
+      <RulesHealth data={data} removeUserRule={removeUserRule} />
     </main>
   );
 }

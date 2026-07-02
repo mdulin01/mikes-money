@@ -28,6 +28,11 @@ const RULES = [
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----
+  // Rent moves through Mike's own accounts inconsistently (Liam → BoA → 5/3, sometimes
+  // 5/3 → BoA by self-Zelle) — every self-leg is a transfer, income counts ONCE at the
+  // Liam/Avail deposit. 'online banking transfer' = BoA's inter-account descriptor
+  // (NOT covered by 'online transfer'); 'zelle payment to/from mike dulin' = self-Zelle.
+  { kw: ['zelle payment to mike dulin', 'zelle payment from mike dulin', 'online banking transfer'], category: 'transfer' },
   { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt', 'citi card online', 'citictp'], category: 'transfer' },
   // ---- HOME-OFFICE BILLS (personal, partial business) ----
   { kw: ['duke energy', 'piedmont natural', 'dominion energy', 'charlotte water', 'water/sewer'], category: 'utilities', homeOffice: true },
