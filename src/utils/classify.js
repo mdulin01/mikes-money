@@ -18,6 +18,9 @@ const RULES = [
   //  • Late/manual rent arrives as a money-order COUNTER CREDIT (no payer name) — not auto-attributable;
   //    Liam documents those in rainbow-rentals (payment method per property).
   { kw: ['liam dulin', 'avail des', 'availco', 'avail tenant', 'avail rent', 'move sales inc', 'move sales', 'move, inc'], category: 'rental', klass: 'rental', inflow: true },
+  // Avail OUTFLOWS = rent clawed back after a tenant payment bounces (confirmed by Mike
+  // 2026-07-02: Green Crest) or Avail service fees — both net against rental income/Sch E.
+  { kw: ['avail des', 'availco', 'move sales inc', 'move sales', 'move, inc'], category: 'rental', klass: 'rental' },
   // ---- RETIREMENT INCOME (monthly IRA distributions started 2026) ----
   // Explicit distribution descriptors — high confidence.
   { kw: ['ira distribution', 'ira dist', 'req min dist', 'rmd payout', 'retirement distribution', 'periodic dist'], category: 'retirement-inc', klass: 'personal', inflow: true },

@@ -66,7 +66,9 @@ export const PROPERTY_RULES = [
   { kw: ['hillcrest'], propertyId: 'hillcrest' },
   { kw: ['brookhurst'], propertyId: 'brookhurst' },
   // Avail deposits post as 'Move Sales Inc' for BOTH Green Crest and Brookhurst — disambiguate by amount.
+  // Outflows at these amounts are rent CLAWBACKS (bounced tenant payment) — same property.
   { kw: ['move sales inc', 'move sales'], amount: 1300, propertyId: 'brookhurst' },
+  { kw: ['move sales inc', 'move sales'], amount: 1725, propertyId: 'green-crest' },
   { kw: ['move sales inc', 'move sales', 'greencrest'], propertyId: 'green-crest' },
   // ---- Personal residence (N. Church) — mortgage servicer Guild; confirmed personal 2026-07-01 ----
   { kw: ['guild mortgage', 'guild mtg'], propertyId: 'n-church' },
