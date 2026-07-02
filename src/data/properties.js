@@ -85,6 +85,14 @@ export const PROPERTY_RULES = [
   // against half-amounts 2026-07-01: 4904≈$897×2=Hillcrest · 3780=$1,329=Prairie ·
   // …0576≈$588×2=N.Elm · …9286≈$652–660×2=Green Crest.
   { kw: ['84904'], propertyId: 'hillcrest' },
+  // ALL Rocket loans are Schwab-Bank-branded and can post as "CHARLES SCHWAB DES:LOAN"
+  // (all four did on 2026-06-08) — disambiguate by amount like the Rocket rules below.
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 588, propertyId: 'north-elm' },
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 656, propertyId: 'green-crest' },
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 897, propertyId: 'hillcrest' },
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 1329, propertyId: 'prairie-trail' },
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 1176, propertyId: 'north-elm' },
+  { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], amount: 1795, propertyId: 'hillcrest' },
   { kw: ['73780'], propertyId: 'prairie-trail' },
   { kw: ['3551560576', '560576'], propertyId: 'north-elm' },
   { kw: ['3555729286', '729286'], propertyId: 'green-crest' },

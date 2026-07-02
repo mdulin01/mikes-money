@@ -44,7 +44,9 @@ const RULES = [
   // ---- RENTAL PROPERTY EXPENSES (Sch E) ----
   // Mortgage servicer Rocket — disambiguated per-property in PROPERTY_RULES (data/properties.js).
   { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], category: 'mortgage', klass: 'rental' },
-  // Charles Schwab pledged-asset loan — rental debt service (descriptor: CHARLES SCHWAB DES:LOAN / SCHWAB LOAN ####). Specific so it never catches brokerage txns.
+  // "CHARLES SCHWAB DES:LOAN" = the HILLCREST mortgage — Rocket loan 3548284904 is
+  // Schwab-Bank-branded ("Home Loan Provider of Charles Schwab Bank"), so its biweekly
+  // $897.26 autopay sometimes posts under the Schwab name (confirmed in Rocket portal 2026-07-02).
   { kw: ['schwab des:loan', 'charles schwab loan', 'schwab loan'], category: 'mortgage', klass: 'rental' },
   // Guild Mortgage — Mike's PERSONAL residence (N. Church, owner-occupied; confirmed 2026-07-01). Never a rental deduction.
   { kw: ['guild mortgage', 'guild mtg'], category: 'mortgage' },
