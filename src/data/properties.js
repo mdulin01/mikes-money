@@ -73,7 +73,21 @@ export const PROPERTY_RULES = [
   { kw: ['green crest hoa', 'greencrest hoa'], propertyId: 'green-crest' },
   { kw: ['william douglas'], propertyId: 'prairie-trail' },
 
-  // ---- Mortgages (single servicer Rocket — disambiguate by amount) ----
+  // ---- Mortgages (single servicer Rocket) ----
+  // Rocket drafts SEMI-MONTHLY (half-payments) as of ~Mar 2026, so the old full-amount
+  // matching silently failed. Match by the LOAN NUMBER carried in the bank descriptor
+  // instead ("ID:XXXXX84904" ACH form / "MTG PYMTS 3551560576" web form) — verified
+  // against half-amounts 2026-07-01: 4904≈$897×2=Hillcrest · 3780=$1,329=Prairie ·
+  // …0576≈$588×2=N.Elm · …9286≈$652–660×2=Green Crest.
+  { kw: ['84904'], propertyId: 'hillcrest' },
+  { kw: ['73780'], propertyId: 'prairie-trail' },
+  { kw: ['3551560576', '560576'], propertyId: 'north-elm' },
+  { kw: ['3555729286', '729286'], propertyId: 'green-crest' },
+  // Amount fallbacks for descriptors without a loan number (June 2026 format has none).
+  // Semi-monthly halves first, then legacy full-monthly amounts.
+  { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 588, propertyId: 'north-elm' },
+  { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 656, propertyId: 'green-crest' },  // $652–660 escrow drift, ±5 tolerance
+  { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 897, propertyId: 'hillcrest' },
   { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 1176, propertyId: 'north-elm' },
   { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 1304, propertyId: 'green-crest' },
   { kw: ['rocket mortgage', 'rocketmtg', 'rkt mtg'], amount: 1329, propertyId: 'prairie-trail' },

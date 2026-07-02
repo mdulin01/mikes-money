@@ -66,6 +66,23 @@ export async function writeRRPayments(allPayments) {
   })), { merge: true });
 }
 
+// --- Liam expense-review queue (rendered on rainbow-rentals' Action Items page) ---
+// rentalData/expenseReview = { items: [{ id:'mm-<txnid>', date, amount, description,
+//   suggestedPropertyId (RR id|null), reason:'liam'|'tagged-rental', status:'pending'|
+//   'approved'|'dismissed', addedAt }], lastUpdated, updatedBy }
+export async function fetchRRReview() {
+  const snap = await getDoc(doc(rrDb(), 'rentalData', 'expenseReview'));
+  return snap.data()?.items || [];
+}
+
+export async function writeRRReview(items) {
+  await setDoc(doc(rrDb(), 'rentalData', 'expenseReview'), JSON.parse(JSON.stringify({
+    items,
+    lastUpdated: new Date().toISOString(),
+    updatedBy: 'mikes-money sync',
+  })), { merge: true });
+}
+
 // Auto-match a mikes-money propertyId to a rainbow-rentals property by name/address keywords.
 const MAP_HINTS = {
   'north-elm': ['elm'],

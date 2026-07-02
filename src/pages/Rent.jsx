@@ -3,7 +3,7 @@ import { money } from '../utils/format';
 import { effectiveClass } from '../utils/classify';
 import { PROPERTIES, effectiveProperty } from '../data/properties';
 import { toLocalMonthStr, monthsBetween } from '../utils/dateUtils';
-import { rrSignIn, rrAuth, fetchRR, writeRRPayments, autoMapProperties } from '../utils/rrSync';
+import { rrSignIn, rrAuth, fetchRR, writeRRPayments, fetchRRReview, writeRRReview, autoMapProperties } from '../utils/rrSync';
 import { useRangeTxns } from '../hooks/useRangeTxns';
 import { useToast } from '../components/Toast';
 
@@ -57,12 +57,15 @@ export default function Rent({ data, accounts, updateConfig }) {
   const savedMap = data?.rrPropertyMap || null;
   const [propMap, setPropMap] = useState(savedMap || {});   // mm id → rr id
 
+  const [rrReview, setRRReview] = useState([]);
+
   const connect = useCallback(async () => {
     setRRBusy(true); setRRError(null);
     try {
       await rrSignIn();
       const fetched = await fetchRR();
       setRR(fetched);
+      setRRReview(await fetchRRReview());
       const map = savedMap && Object.keys(savedMap).length ? savedMap : autoMapProperties(fetched.properties);
       setPropMap(map);
       if (!savedMap) updateConfig({ rrPropertyMap: map });
@@ -178,6 +181,57 @@ export default function Rent({ data, accounts, updateConfig }) {
     return rrProp ? parseFloat(rrProp.monthlyRent) || 0 : null;
   };
 
+  // --- Liam expense-review queue → rainbow-rentals Action Items -------------------
+  // Candidates: (a) outflows carrying Liam's name (Cash App to Liam, ACH INDN:LIAM),
+  // (b) anything Mike hand-tags as a rental expense on the Transactions page.
+  // ⚠ The cc ending 4793 is NOT Plaid-linked — its charges can't be surfaced until
+  // it's linked (Accounts → Link account). 'liam dul' deliberately — plain /liam/
+  // matches "WILLIAM DOuglas" HOA payments.
+  const LIAM_RE = /liam dul|cash app\*liam|indn:\s*liam/i;
+  const reviewCandidates = useMemo(() => {
+    if (!txns) return [];
+    return txns.filter(t => {
+      if ((t.amount || 0) <= 0 || ignored.has(t.accountId)) return false;
+      const label = `${t.merchantName || ''} ${t.name || ''}`;
+      return LIAM_RE.test(label) || (t.txClass === 'rental' && t.classBy === 'user');
+    });
+  }, [txns, ignored]);
+
+  const reviewById = useMemo(() => new Set(rrReview.map(i => i.id)), [rrReview]);
+  const toSend = useMemo(
+    () => reviewCandidates.filter(t => !reviewById.has(`mm-${t.id}`)),
+    [reviewCandidates, reviewById],
+  );
+  const pendingCount = rrReview.filter(i => i.status === 'pending').length;
+
+  const [sendingReview, setSendingReview] = useState(false);
+  const sendReview = async () => {
+    if (!rr || toSend.length === 0) return;
+    setSendingReview(true);
+    try {
+      const newItems = toSend.map(t => ({
+        id: `mm-${t.id}`,
+        date: t.date,
+        amount: Math.abs(t.amount || 0),
+        description: (t.merchantName || t.name || 'Transaction').slice(0, 90),
+        detail: (t.name || '').slice(0, 120),
+        suggestedPropertyId: t.propertyId && propMap[t.propertyId] ? String(propMap[t.propertyId]) : null,
+        reason: LIAM_RE.test(`${t.merchantName || ''} ${t.name || ''}`) ? 'liam' : 'tagged-rental',
+        status: 'pending',
+        addedAt: new Date().toISOString(),
+      }));
+      const all = [...rrReview, ...newItems];
+      await writeRRReview(all);
+      setRRReview(all);
+      toast?.(`Sent ${newItems.length} expense${newItems.length === 1 ? '' : 's'} to Liam's review queue`, 'success');
+    } catch (e) {
+      console.error('review send failed:', e);
+      toast?.(`Send failed: ${e?.message || e}`, 'error');
+    } finally {
+      setSendingReview(false);
+    }
+  };
+
   return (
     <main className="max-w-6xl mx-auto p-4 space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -278,6 +332,42 @@ export default function Rent({ data, accounts, updateConfig }) {
             ))}
           </ul>
           <p className="text-[11px] text-slate-500 mt-2">Tag these on the Transactions page (property dropdown) — they'll sync on the next pass.</p>
+        </section>
+      )}
+
+      {/* Liam expense-review queue */}
+      {rr && (
+        <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-slate-300">👷 Liam's expense review queue</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500">
+                {pendingCount} pending with Liam · {rrReview.filter(i => i.status === 'approved').length} approved · {rrReview.filter(i => i.status === 'dismissed').length} dismissed
+              </span>
+              {toSend.length > 0 && (
+                <button onClick={sendReview} disabled={sendingReview}
+                  className="text-xs bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg">
+                  {sendingReview ? 'Sending…' : `Send ${toSend.length} new →`}
+                </button>
+              )}
+            </div>
+          </div>
+          {toSend.length > 0 && (
+            <ul className="text-xs text-slate-400 space-y-1 mb-2">
+              {toSend.slice(0, 8).map(t => (
+                <li key={t.id} className="flex justify-between">
+                  <span className="truncate pr-3">{t.date} · {(t.merchantName || t.name || '').slice(0, 60)}</span>
+                  <span className="mono-nums">{money(t.amount)}</span>
+                </li>
+              ))}
+              {toSend.length > 8 && <li className="text-slate-600">…and {toSend.length - 8} more</li>}
+            </ul>
+          )}
+          <p className="text-[11px] text-slate-500">
+            Auto-detects outflows with Liam's name (Cash App, ACH) + anything you tag as class "Rental" on the Transactions page.
+            Liam approves/dismisses them on rainbow-rentals → Action Items; approved items become expense records there.
+            ⚠ The card ending 4793 isn't Plaid-linked yet — link it on the Accounts page and its charges will flow here too.
+          </p>
         </section>
       )}
 
