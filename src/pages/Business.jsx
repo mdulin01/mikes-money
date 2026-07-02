@@ -5,6 +5,7 @@ import { COLLECTIONS } from '../constants';
 import { money } from '../utils/format';
 import { toLocalDateStr, toLocalMonthStr } from '../utils/dateUtils';
 import { downloadInvoice, invoiceBase64 } from '../utils/invoicePdf';
+import { effectiveClass } from '../utils/classify';
 
 // Activity types for time entries — drive the per-week itemization on invoices.
 const ACTIVITIES = [
@@ -34,9 +35,14 @@ const CLIENTS = {
 const PAYERS = [
   { id: 'avance', label: 'Avance Care', re: /avance/i },
   { id: 'tpc',    label: 'Triad Primary Care', re: /wire type:book/i },
+  { id: 'generations', label: 'Generations Family Med', re: /generations/i },
   { id: 'gma',    label: 'Gray Matter', re: /gray\s?matter/i },
   { id: 'unc',    label: 'UNC Charlotte', re: /unc charlotte|uncc|university of north carolina at charlotte/i },
 ];
+// Safety net: business-classed inflows that match NO payer regex land here instead of
+// silently vanishing from the matrix (which is how a $12,150 Generations deposit went
+// missing before Generations had a row). If this bucket shows money, a payer needs a regex.
+const OTHER_PAYER = { id: 'other-biz', label: '⚠ Other business income' };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ── Business-expense categories (Schedule C) + 2026 IRS standard business mileage rate ──
@@ -111,19 +117,22 @@ export default function Business({ data, updateConfig }) {
 
   const incomeMatrix = useMemo(() => {
     const m = {};
-    for (const p of PAYERS) m[p.id] = { label: p.label, months: Array(12).fill(0), total: 0, txns: [] };
+    for (const p of [...PAYERS, OTHER_PAYER]) m[p.id] = { label: p.label, months: Array(12).fill(0), total: 0, txns: [] };
     for (const t of ytdTxns || []) {
       if ((t.amount || 0) >= 0) continue; // inflows only (Plaid: negative = money in)
       const name = (t.merchantName || '') + ' ' + (t.name || '');
       const p = PAYERS.find((p) => p.re.test(name));
-      if (!p) continue;
+      // No payer regex matched — keep it anyway if it's business income (tagged or rule-classed),
+      // in the ⚠ bucket, so the matrix total always reconciles with the Tax page's Schedule C income.
+      const id = p ? p.id : (effectiveClass(t, null, data?.userRules) === 'business' ? OTHER_PAYER.id : null);
+      if (!id) continue;
       const amt = -t.amount;
       const mo = Number((t.date || '').slice(5, 7)) - 1;
-      if (mo >= 0) { m[p.id].months[mo] += amt; m[p.id].total += amt; m[p.id].txns.push(t); }
+      if (mo >= 0) { m[id].months[mo] += amt; m[id].total += amt; m[id].txns.push(t); }
     }
     return m;
-  }, [ytdTxns]);
-  const grandTotal = PAYERS.reduce((s, p) => s + incomeMatrix[p.id].total, 0);
+  }, [ytdTxns, data?.userRules]);
+  const grandTotal = [...PAYERS, OTHER_PAYER].reduce((s, p) => s + incomeMatrix[p.id].total, 0);
   const maxMonth = new Date().getMonth();
 
   // ── Timesheet state ──
@@ -293,9 +302,12 @@ export default function Business({ data, updateConfig }) {
                 <th className="text-right pl-2">Total</th>
               </tr></thead>
               <tbody>
-                {PAYERS.map((p) => (
+                {[...PAYERS, ...(incomeMatrix[OTHER_PAYER.id].total > 0 ? [OTHER_PAYER] : [])].map((p) => (
                   <tr key={p.id} className="border-t border-slate-700/60">
-                    <td className="py-1.5 pr-2 text-slate-300">{p.label}</td>
+                    <td className={`py-1.5 pr-2 ${p.id === OTHER_PAYER.id ? 'text-amber-300' : 'text-slate-300'}`}
+                        title={p.id === OTHER_PAYER.id ? incomeMatrix[p.id].txns.map(t => `${t.date} · ${t.merchantName || t.name} · $${-t.amount}`).join('\n') : undefined}>
+                      {p.label}
+                    </td>
                     {incomeMatrix[p.id].months.slice(0, maxMonth + 1).map((v, i) => (
                       <td key={i} className="mono-nums text-right px-1 text-slate-400">{v ? money(v) : '·'}</td>
                     ))}
