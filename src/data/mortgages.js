@@ -102,18 +102,18 @@ export const MORTGAGES = [
     id: 'n-church',
     propertyId: 'n-church',
     nickname: 'N. Church (home)',
-    address: '113 N. Church St #110',
-    servicer: 'Guild Mortgage',
-    loanNo: null,
-    plaidMask: null,
-    type: null,
-    rate: null,                   // unknown — fill from a Guild statement
-    originalBalance: null,
-    balance: null,
+    address: '113 N Church St Unit 110',
+    servicer: 'Guild Mortgage',   // captured from my.guildmortgage.com 2026-07-02
+    loanNo: '00749-1081416',
+    plaidMask: null,              // not Plaid-linked
+    type: 'Conventional',
+    rate: 0.0575,                 // cheapest debt in the portfolio — keep, don't refi
+    originalBalance: null,        // not shown in portal
+    balance: 168920.52,
     paySchedule: 'monthly',
-    paymentPerDraft: 1386,        // observed bank draft
-    monthlyEquivalent: 1386,
-    maturity: null,
+    paymentPerDraft: 1385.72,     // includes escrow (escrow balance $4,014.72 on 7/2)
+    monthlyEquivalent: 1385.72,
+    maturity: null,               // portal doesn't show maturity; add from a statement if wanted
     extraPrincipalPaid: null,
     interestSaved: null,
     payoffEarlierBy: null,

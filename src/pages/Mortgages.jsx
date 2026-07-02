@@ -85,8 +85,11 @@ export default function Mortgages({ accounts = [] }) {
               {l.extraPrincipalPaid > 0 && <Row k="Extra principal → saved" v={`${money(l.extraPrincipalPaid)} → ${money(Math.round(l.interestSaved))} (${l.payoffEarlierBy} early)`} good />}
               {l.loanNo && <Row k="Loan #" v={l.loanNo} />}
             </div>
-            {l.id === 'n-church' && (
-              <p className="text-[11px] text-amber-300/80 mt-2">Guild loan — rate/balance unknown. Grab a statement and fill in data/mortgages.js to include it in projections.</p>
+            {!l.rate && (
+              <p className="text-[11px] text-amber-300/80 mt-2">Rate/balance unknown — fill in data/mortgages.js from a statement to include it in projections.</p>
+            )}
+            {l.id === 'n-church' && l.rate && (
+              <p className="text-[11px] text-slate-500 mt-2">Cheapest debt in the portfolio at {pct(l.rate, 2)} — keep it; payment includes escrow (bal. $4,015 on 7/2).</p>
             )}
           </div>
         ))}
