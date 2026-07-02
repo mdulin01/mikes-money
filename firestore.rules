@@ -27,10 +27,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Ingested transactions (written by Cloud Functions via Admin SDK)
+    // Ingested transactions (written by Cloud Functions via Admin SDK).
+    // Manual backfill entries (id prefix 'manual-') may be created/deleted by the
+    // owner — for deposits that predate the Plaid history window (starts 2026-01-23),
+    // e.g. the Jan 6 2026 Generations Family Med consulting payment.
     match /transactions/{txnId} {
       allow read, update: if isOwner();   // allow categorization edits
-      allow create, delete: if false;
+      allow create, delete: if isOwner() && txnId.matches('manual-.*');
     }
 
     // Accounts (balances, metadata — server-written)
