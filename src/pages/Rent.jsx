@@ -184,9 +184,9 @@ export default function Rent({ data, accounts, updateConfig }) {
   // --- Liam expense-review queue → rainbow-rentals Action Items -------------------
   // Candidates: (a) outflows carrying Liam's name (Cash App to Liam, ACH INDN:LIAM),
   // (b) anything Mike hand-tags as a rental expense on the Transactions page.
-  // ⚠ The cc ending 4793 is NOT Plaid-linked — its charges can't be surfaced until
-  // it's linked (Accounts → Link account). 'liam dul' deliberately — plain /liam/
-  // matches "WILLIAM DOuglas" HOA payments.
+  // The Citi •4793 card (Liam's authorized-user card, not Plaid-linked) is handled
+  // separately: the mikeslife Rupert bridge feeds its charges into rainbow-rentals'
+  // CardInbox. 'liam dul' deliberately — plain /liam/ matches "WILLIAM DOuglas" HOA.
   const LIAM_RE = /liam dul|cash app\*liam|indn:\s*liam/i;
   const reviewCandidates = useMemo(() => {
     if (!txns) return [];
@@ -366,7 +366,8 @@ export default function Rent({ data, accounts, updateConfig }) {
           <p className="text-[11px] text-slate-500">
             Auto-detects outflows with Liam's name (Cash App, ACH) + anything you tag as class "Rental" on the Transactions page.
             Liam approves/dismisses them on rainbow-rentals → Action Items; approved items become expense records there.
-            ⚠ The card ending 4793 isn't Plaid-linked yet — link it on the Accounts page and its charges will flow here too.
+            Note: charges on the Citi •4793 card already reach rainbow-rentals via its CardInbox (Rupert bridge) — this queue
+            covers everything else.
           </p>
         </section>
       )}
