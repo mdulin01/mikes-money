@@ -187,12 +187,17 @@ export default function Rent({ data, accounts, updateConfig }) {
   // personal accounts that belongs in the 5/3 rental-ops account. Transfers INTO 5/3
   // (category 'transfer', 5/3-side inflow) count as already-settled; 5/3→personal
   // transfers count the other way.
+  // Window starts Apr 1 2026 — the first full month after every account's Plaid history
+  // begins (BoA 1/23, Fifth Third 3/16). Jan–Mar was settled by Mike's Jan 26 / Feb 17
+  // Zelle transfers to 5/3 (visible on 5/3 statements, pre-Plaid). Bump this forward if
+  // a big manual settle-up ever resets the clock.
+  const TRUEUP_START = '2026-04-01';
   const trueUp = useMemo(() => {
     if (!txns) return null;
     const ftIds = new Set(accounts.filter(a => /fifth third|5\/3|53 bank/i.test(`${a.institution || ''} ${a.name || ''}`)).map(a => a.id));
     let persInc = 0, persExp = 0, toFT = 0, fromFT = 0;
     for (const t of txns) {
-      if (ignored.has(t.accountId)) continue;
+      if (ignored.has(t.accountId) || (t.date || '') < TRUEUP_START) continue;
       const amt = t.amount || 0;
       if (t.txClass === 'rental' && !ftIds.has(t.accountId)) {
         if (amt < 0) persInc += -amt; else persExp += amt;
@@ -381,7 +386,7 @@ export default function Rent({ data, accounts, updateConfig }) {
       {trueUp && (
         <section className={`border rounded-xl p-4 ${Math.abs(trueUp.owed) > 500 ? 'bg-amber-950/30 border-amber-900/50' : 'bg-slate-800 border-slate-700'}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-300">💸 Fifth Third true-up (YTD)</h2>
+            <h2 className="text-sm font-semibold text-slate-300">💸 Fifth Third true-up (since Apr 1)</h2>
             <div className={`text-lg font-bold mono-nums ${trueUp.owed > 500 ? 'text-amber-300' : trueUp.owed < -500 ? 'text-sky-300' : 'text-emerald-400'}`}>
               {trueUp.owed > 500 ? `Send ${money(Math.round(trueUp.owed))} → 5/3`
                 : trueUp.owed < -500 ? `5/3 is owed-from: withdraw ${money(Math.round(-trueUp.owed))}`

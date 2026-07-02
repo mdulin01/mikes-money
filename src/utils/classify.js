@@ -35,7 +35,10 @@ const RULES = [
   // 5/3 → BoA by self-Zelle) — every self-leg is a transfer, income counts ONCE at the
   // Liam/Avail deposit. 'online banking transfer' = BoA's inter-account descriptor
   // (NOT covered by 'online transfer'); 'zelle payment to/from mike dulin' = self-Zelle.
-  { kw: ['zelle payment to mike dulin', 'zelle payment from mike dulin', 'online banking transfer'], category: 'transfer' },
+  // 'from michael duli' = the 5/3-side RECEIVING leg of a BoA→5/3 self-Zelle
+  // ("RECEIVED ZELLE PMT ID ... FROM MICHAEL DULIN") — without this it size-matches
+  // the rent window and double-counts rent income.
+  { kw: ['zelle payment to mike dulin', 'zelle payment from mike dulin', 'from michael duli', 'online banking transfer'], category: 'transfer' },
   { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt', 'citi card online', 'citictp'], category: 'transfer' },
   // ---- HOME-OFFICE BILLS (personal, partial business) ----
   { kw: ['duke energy', 'piedmont natural', 'dominion energy', 'charlotte water', 'water/sewer'], category: 'utilities', homeOffice: true },
