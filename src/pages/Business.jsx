@@ -34,8 +34,9 @@ const CLIENTS = {
 // How each payer shows up in bank transactions (BOA strips the sender on book wires — TPC confirmed).
 const PAYERS = [
   { id: 'avance', label: 'Avance Care', re: /avance/i },
-  { id: 'tpc',    label: 'Triad Primary Care', re: /wire type:book/i },
-  { id: 'generations', label: 'Generations Family Med', re: /generations/i },
+  // TPC pays by BOA book wire (sender stripped). Early payments posted under parent
+  // company "Generations Family Medicine" — same payer, one row.
+  { id: 'tpc',    label: 'Triad Primary Care', re: /wire type:book|generations/i },
   { id: 'gma',    label: 'Gray Matter', re: /gray\s?matter/i },
   { id: 'unc',    label: 'UNC Charlotte', re: /unc charlotte|uncc|university of north carolina at charlotte/i },
 ];
@@ -316,7 +317,7 @@ export default function Business({ data, updateConfig }) {
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-slate-500 mt-2">TPC pays by BOA book wire (sender name stripped by the bank). Avg {money(Math.round(grandTotal / (maxMonth + 1)))}/mo.</p>
+            <p className="text-xs text-slate-500 mt-2">TPC pays by BOA book wire (sender name stripped) — earlier payments posted as parent co. "Generations Family Medicine". Avg {money(Math.round(grandTotal / (maxMonth + 1)))}/mo.</p>
           </div>
         )}
       </div>
