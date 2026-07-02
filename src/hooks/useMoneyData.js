@@ -1,4 +1,4 @@
-import { classify } from '../utils/classify';
+import { classify, effectiveCategory } from '../utils/classify';
 import { monthFlows } from '../utils/cashflow';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -394,7 +394,9 @@ export function useMoneyData(user) {
     const m = toLocalMonthStr();
     const ignored = new Set(data?.ignoredAccounts || []);
     const acctById = Object.fromEntries(accounts.map(a => [a.id, a]));
-    return monthFlows(recentTxns.filter(t => !ignored.has(t.accountId)), acctById, m);
+    // Live classification (user rules + built-ins) so uncategorized txns bucket correctly.
+    const catOf = (t) => { const c = effectiveCategory(t, acctById, data?.userRules); return c === 'uncategorized' ? null : c; };
+    return monthFlows(recentTxns.filter(t => !ignored.has(t.accountId)), acctById, m, catOf);
   }, [recentTxns, accounts, data]);
 
   const currentMonthSpend = flows.spend;
