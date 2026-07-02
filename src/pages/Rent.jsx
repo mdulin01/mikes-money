@@ -184,9 +184,12 @@ export default function Rent({ data, accounts, updateConfig }) {
   // --- Liam expense-review queue → rainbow-rentals Action Items -------------------
   // Candidates: (a) outflows carrying Liam's name (Cash App to Liam, ACH INDN:LIAM),
   // (b) anything Mike hand-tags as a rental expense on the Transactions page.
-  // The Citi •4793 card (Liam's authorized-user card, not Plaid-linked) is handled
-  // separately: the mikeslife Rupert bridge feeds its charges into rainbow-rentals'
-  // CardInbox. 'liam dul' deliberately — plain /liam/ matches "WILLIAM DOuglas" HOA.
+  // The •4793 card is Liam's AUTHORIZED-USER card on the Citi AAdvantage account
+  // (Plaid mask ····3408). Plaid txns on 3408 carry NO cardholder field (verified
+  // 2026-07-01), so his swipes can't be told apart from Mike's here — per-card
+  // attribution comes from the Rupert CardInbox bridge (reads Citi directly) into
+  // rainbow-rentals. This queue covers Liam-NAMED bank txns + Mike's manual tags.
+  // 'liam dul' deliberately — plain /liam/ matches "WILLIAM DOuglas" HOA.
   const LIAM_RE = /liam dul|cash app\*liam|indn:\s*liam/i;
   const reviewCandidates = useMemo(() => {
     if (!txns) return [];
@@ -366,8 +369,9 @@ export default function Rent({ data, accounts, updateConfig }) {
           <p className="text-[11px] text-slate-500">
             Auto-detects outflows with Liam's name (Cash App, ACH) + anything you tag as class "Rental" on the Transactions page.
             Liam approves/dismisses them on rainbow-rentals → Action Items; approved items become expense records there.
-            Note: charges on the Citi •4793 card already reach rainbow-rentals via its CardInbox (Rupert bridge) — this queue
-            covers everything else.
+            Note: •4793 is Liam's authorized-user card on the Citi AAdvantage account (····3408). Plaid can't tell his swipes
+            from yours on that account, so those go to rainbow-rentals via the CardInbox (Rupert reads Citi directly) — this
+            queue covers everything else. Charges on ····3408 you tag as "Rental" also land here.
           </p>
         </section>
       )}
