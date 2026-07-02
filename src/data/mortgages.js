@@ -106,14 +106,14 @@ export const MORTGAGES = [
     servicer: 'Guild Mortgage',   // captured from my.guildmortgage.com 2026-07-02
     loanNo: '00749-1081416',
     plaidMask: null,              // not Plaid-linked
-    type: 'Conventional',
+    type: 'Conventional 30-yr',   // closed 2025-12-11 (per Mike)
     rate: 0.0575,                 // cheapest debt in the portfolio — keep, don't refi
     originalBalance: null,        // not shown in portal
     balance: 168920.52,
     paySchedule: 'monthly',
     paymentPerDraft: 1385.72,     // includes escrow (escrow balance $4,014.72 on 7/2)
     monthlyEquivalent: 1385.72,
-    maturity: null,               // portal doesn't show maturity; add from a statement if wanted
+    maturity: '2056-01-01',       // 30 yrs from Dec 2025 closing (first pmt Feb 2026)
     extraPrincipalPaid: null,
     interestSaved: null,
     payoffEarlierBy: null,
