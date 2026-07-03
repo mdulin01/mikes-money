@@ -9,6 +9,19 @@
 
 export const MORTGAGES_AS_OF = '2026-07-02';
 
+// Purchase history — pulled from Redfin sale records 2026-07-02 (all four bought in 2024,
+// which is why the rates are 6.99–7.5%). estValue = loan balance + Rocket equity estimate;
+// Prairie has no Rocket estimate so purchase price is the placeholder (editable in the
+// sell/hold analyzer). monthlyOtherCosts = HOA + non-escrowed tax/insurance estimates:
+// ⚠ Hillcrest's payment carries ~no escrow, so its taxes+insurance (~$550/mo est) are here;
+// ⚠ N. Elm's $302 Magnolia HOA cadence (monthly vs quarterly) needs verification with Liam.
+export const PURCHASES = {
+  'north-elm':     { purchaseDate: '2024-01-03', purchasePrice: 200000, estValue: 226128, monthlyRent: 1425, monthlyOtherCosts: 302 },
+  'hillcrest':     { purchaseDate: '2024-06-27', purchasePrice: 360000, estValue: 380120, monthlyRent: 1650, monthlyOtherCosts: 550 },
+  'green-crest':   { purchaseDate: '2024-09-30', purchasePrice: 200000, estValue: 254604, monthlyRent: 1725, monthlyOtherCosts: 80 },
+  'prairie-trail': { purchaseDate: '2024-11-05', purchasePrice: 223000, estValue: 223000, monthlyRent: 1500, monthlyOtherCosts: 200 },
+};
+
 export const MORTGAGES = [
   {
     id: 'hillcrest',

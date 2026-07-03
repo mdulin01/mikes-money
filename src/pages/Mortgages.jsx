@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { money, pct } from '../utils/format';
 import { MORTGAGES, MORTGAGES_AS_OF } from '../data/mortgages';
 import { monthlyPI, monthsUntil, project, refiCompare } from '../utils/amortize';
+import SellHoldAnalyzer from '../components/SellHoldAnalyzer';
 
 // Mortgages — portfolio debt overview + payoff projections + refinance planner.
 // Loan facts hand-captured from the Rocket servicing portal (see data/mortgages.js);
@@ -10,7 +11,7 @@ import { monthlyPI, monthsUntil, project, refiCompare } from '../utils/amortize'
 
 const COLORS = { hillcrest: '#10b981', 'prairie-trail': '#f59e0b', 'green-crest': '#38bdf8', 'north-elm': '#a78bfa', 'n-church': '#64748b' };
 
-export default function Mortgages({ accounts = [] }) {
+export default function Mortgages({ accounts = [], data, updateConfig }) {
   const loans = useMemo(() => MORTGAGES.map(l => {
     // Prefer live Plaid balance when the loan is linked
     const plaid = l.plaidMask ? accounts.find(a => a.mask === l.plaidMask && ['loan', 'mortgage'].includes(a.type)) : null;
@@ -160,6 +161,9 @@ export default function Mortgages({ accounts = [] }) {
           customers sometimes waive costs. Estimates — confirm real quotes before acting.
         </p>
       </section>
+
+      {/* Sell vs hold — after-tax proceeds vs holding through the horizon */}
+      <SellHoldAnalyzer data={data} updateConfig={updateConfig} />
     </main>
   );
 }
