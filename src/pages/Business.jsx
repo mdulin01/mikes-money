@@ -6,6 +6,7 @@ import { money } from '../utils/format';
 import { toLocalDateStr, toLocalMonthStr } from '../utils/dateUtils';
 import { downloadInvoice, invoiceBase64 } from '../utils/invoicePdf';
 import { effectiveClass } from '../utils/classify';
+import TxnPopover from '../components/TxnPopover';
 
 // Activity types for time entries — drive the per-week itemization on invoices.
 const ACTIVITIES = [
@@ -112,15 +113,16 @@ export default function Business({ data, updateConfig }) {
   const [ytdTxns, setYtdTxns] = useState(null);
   useEffect(() => {
     getDocs(query(collection(db, COLLECTIONS.TRANSACTIONS), where('date', '>=', year + '-01-01'), limit(4000)))
-      .then((snap) => setYtdTxns(snap.docs.map((d) => d.data())))
+      .then((snap) => setYtdTxns(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
       .catch((e) => { console.error('YTD income query failed', e); setYtdTxns([]); });
   }, [year]);
 
   const incomeMatrix = useMemo(() => {
     const m = {};
-    for (const p of [...PAYERS, OTHER_PAYER]) m[p.id] = { label: p.label, months: Array(12).fill(0), total: 0, txns: [] };
+    const ignored = new Set(data?.ignoredAccounts || []); // match Tax page so Sch C income reconciles
+    for (const p of [...PAYERS, OTHER_PAYER]) m[p.id] = { label: p.label, months: Array(12).fill(0), byMonth: Array.from({ length: 12 }, () => []), total: 0, txns: [] };
     for (const t of ytdTxns || []) {
-      if ((t.amount || 0) >= 0) continue; // inflows only (Plaid: negative = money in)
+      if ((t.amount || 0) >= 0 || ignored.has(t.accountId)) continue; // inflows only (Plaid: negative = money in)
       const name = (t.merchantName || '') + ' ' + (t.name || '');
       const p = PAYERS.find((p) => p.re.test(name));
       // No payer regex matched — keep it anyway if it's business income (tagged or rule-classed),
@@ -129,12 +131,14 @@ export default function Business({ data, updateConfig }) {
       if (!id) continue;
       const amt = -t.amount;
       const mo = Number((t.date || '').slice(5, 7)) - 1;
-      if (mo >= 0) { m[id].months[mo] += amt; m[id].total += amt; m[id].txns.push(t); }
+      if (mo >= 0) { m[id].months[mo] += amt; m[id].byMonth[mo].push(t); m[id].total += amt; m[id].txns.push(t); }
     }
     return m;
-  }, [ytdTxns, data?.userRules]);
+  }, [ytdTxns, data?.userRules, data?.ignoredAccounts]);
   const grandTotal = [...PAYERS, OTHER_PAYER].reduce((s, p) => s + incomeMatrix[p.id].total, 0);
   const maxMonth = new Date().getMonth();
+  // Cell drill-down: { title, txns } → TxnPopover
+  const [detail, setDetail] = useState(null);
 
   // ── Timesheet state ──
   const [form, setForm] = useState({ date: toLocalDateStr(), client: 'avance', activity: 'clinical', hours: '', note: '' });
@@ -310,14 +314,29 @@ export default function Business({ data, updateConfig }) {
                       {p.label}
                     </td>
                     {incomeMatrix[p.id].months.slice(0, maxMonth + 1).map((v, i) => (
-                      <td key={i} className="mono-nums text-right px-1 text-slate-400">{v ? money(v) : '·'}</td>
+                      <td key={i} className="mono-nums text-right px-1 text-slate-400">
+                        {v ? (
+                          <button
+                            onClick={() => setDetail({ title: `${p.label} — ${MONTHS[i]} ${year}`, txns: incomeMatrix[p.id].byMonth[i] })}
+                            title={incomeMatrix[p.id].byMonth[i].map((t) => `${t.date} · ${(t.merchantName || t.name || '').slice(0, 50)} · ${money(-t.amount, { cents: true })}`).join('\n') + '\n(click for detail)'}
+                            className="hover:text-emerald-300 hover:underline decoration-dotted underline-offset-2 cursor-pointer">
+                            {money(v)}
+                          </button>
+                        ) : '·'}
+                      </td>
                     ))}
-                    <td className="mono-nums text-right pl-2 font-medium text-slate-100">{money(incomeMatrix[p.id].total)}</td>
+                    <td className="mono-nums text-right pl-2 font-medium text-slate-100">
+                      <button onClick={() => setDetail({ title: `${p.label} — ${year} YTD`, txns: incomeMatrix[p.id].txns })}
+                        title="All deposits from this payer (click for detail)"
+                        className="hover:text-emerald-300 cursor-pointer">
+                        {money(incomeMatrix[p.id].total)}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-slate-500 mt-2">TPC pays by BOA book wire (sender name stripped) — earlier payments posted as parent co. "Generations Family Medicine". Avg {money(Math.round(grandTotal / (maxMonth + 1)))}/mo.</p>
+            <p className="text-xs text-slate-500 mt-2">TPC pays by BOA book wire (sender name stripped) — earlier payments posted as parent co. "Generations Family Medicine". Avg {money(Math.round(grandTotal / (maxMonth + 1)))}/mo. Hover an amount for the deposits behind it; click to see full detail.</p>
           </div>
         )}
       </div>
@@ -505,6 +524,8 @@ export default function Business({ data, updateConfig }) {
           <button onClick={accrueLateFee} className={btnGhost} disabled={gmaBalance <= 0}>+ late fee ({money(Math.round(gmaBalance * 0.015) + 75)})</button>
         </div>
       </div>
+
+      {detail && <TxnPopover title={detail.title} txns={detail.txns} onClose={() => setDetail(null)} />}
     </div>
   );
 }

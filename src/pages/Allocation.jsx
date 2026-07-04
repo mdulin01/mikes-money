@@ -546,6 +546,7 @@ function SectorCell(props) {
   const denom = total || root?.value || 0;
   const p = denom ? value / denom : 0;
   const color = SECTOR_COLORS[name] || '#64748b';
+  const txt = labelColor(color);
   const isSel = selected === name;
   const clipId = `secclip-${String(name).replace(/[^a-z0-9]/gi, '')}`;
   return (
@@ -554,13 +555,13 @@ function SectorCell(props) {
         <clipPath id={clipId}><rect x={x} y={y} width={width} height={height} /></clipPath>
       </defs>
       <rect x={x} y={y} width={width} height={height} fill={color}
-        fillOpacity={isSel ? 0.16 : 0.04} stroke={color} strokeWidth={isSel ? 3 : 1.5} style={{ pointerEvents: 'all' }} />
+        fillOpacity={isSel ? 1 : 0.92} stroke={isSel ? '#f8fafc' : '#0f172a'} strokeWidth={isSel ? 2.5 : 2} />
       <g clipPath={`url(#${clipId})`}>
         {width > 46 && height > 18 && (
-          <text x={x + 7} y={y + 16} fill={color} fontSize={11} fontWeight={700}>{name}</text>
+          <text x={x + 7} y={y + 16} fill={txt} fontSize={11} fontWeight={600}>{name}</text>
         )}
         {width > 46 && height > 34 && (
-          <text x={x + 7} y={y + 31} fill={color} fontSize={10} opacity={0.75}>{(p * 100).toFixed(1)}%</text>
+          <text x={x + 7} y={y + 31} fill={txt} fontSize={10} opacity={0.82}>{(p * 100).toFixed(1)}%</text>
         )}
       </g>
     </g>

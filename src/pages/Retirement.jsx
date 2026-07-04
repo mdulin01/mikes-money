@@ -2,7 +2,9 @@ import { useMemo, useState, useEffect } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Legend } from 'recharts';
 import { money, pct } from '../utils/format';
 import { simulate } from '../utils/monteCarlo';
-import { computeAge } from '../utils/dateUtils';
+import { computeAge, humanDate, toLocalMonthStr } from '../utils/dateUtils';
+import { effectiveCategory } from '../utils/classify';
+import { useRangeTxns } from '../hooks/useRangeTxns';
 import { USER_PROFILE } from '../constants';
 import TransitionTimeline from '../components/TransitionTimeline';
 import RothRmdPlanner from '../components/RothRmdPlanner';
@@ -108,6 +110,18 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
     }));
   }, [result]);
 
+  // ── Actual retirement draws YTD (retirement-inc inflows — TIAA's ~$722/mo, IRA draws) ──
+  const drawYear = new Date().getFullYear();
+  const yearTxns = useRangeTxns(`${drawYear}-01-01`);
+  const draws = useMemo(() => {
+    return (yearTxns || [])
+      .filter(t => (t.amount || 0) < 0 && effectiveCategory(t, null, data?.userRules) === 'retirement-inc')
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [yearTxns, data?.userRules]);
+  const drawTotal = draws.reduce((s, t) => s + -(t.amount || 0), 0);
+  const drawThisMonth = draws.filter(t => (t.date || '').startsWith(toLocalMonthStr()))
+    .reduce((s, t) => s + -(t.amount || 0), 0);
+
   const successRate = result?.successRate ?? 0;
   const successColor =
     successRate >= 0.9 ? 'text-emerald-400' :
@@ -134,6 +148,29 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           <button onClick={save} className="text-xs text-slate-400 hover:text-slate-200">Save inputs</button>
         </div>
       </header>
+
+      {/* Actual draws hitting the bank — TIAA's monthly ~$722 distribution + any IRA draws */}
+      {draws.length > 0 && (
+        <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-slate-300">💸 Retirement distributions received — {drawYear}</h2>
+            <div className="text-sm text-slate-400">
+              YTD <span className="mono-nums text-sky-300 font-semibold">{money(drawTotal, { cents: true })}</span>
+              {drawThisMonth > 0 && <span className="text-slate-500"> · this month {money(drawThisMonth, { cents: true })}</span>}
+            </div>
+          </div>
+          <ul className="text-xs text-slate-400 space-y-1">
+            {draws.slice(0, 6).map(t => (
+              <li key={t.id} className="flex justify-between gap-3">
+                <span className="truncate">{humanDate(t.date)} · {t.merchantName || t.name}{t.needsReview && <span className="text-orange-400" title="needs review"> ⚑</span>}</span>
+                <span className="mono-nums text-sky-300">{money(-(t.amount || 0), { cents: true })}</span>
+              </li>
+            ))}
+            {draws.length > 6 && <li className="text-slate-600">…and {draws.length - 6} more</li>}
+          </ul>
+          <p className="text-[11px] text-slate-500 mt-2">TIAA pays ~$722/mo. Counted as "IRA draw" on Cash Flow (not earned income) and 1099-R income on the Tax page.</p>
+        </section>
+      )}
 
       {stressResult && result && (
         <section className="bg-amber-950/30 border border-amber-900/50 rounded-xl p-4">

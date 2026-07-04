@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { matchAmazonOrder } from '../utils/amazon';
 import { signedMoney } from '../utils/format';
 import { humanDate } from '../utils/dateUtils';
@@ -12,10 +13,13 @@ const CBYID = Object.fromEntries(CLASSES.map(c => [c.id, c]));
 
 export default function Transactions({ data, recentTxns = [], categorizeTransaction, accounts = [], setTransactionClass, setTransactionProperty, addUserRule, removeUserRule, applyRuleToTxns, autoCategorizeAll, amazonOrders = [] }) {
   const toast = useToast();
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [classFilter, setClassFilter] = useState('all');
-  const [propertyFilter, setPropertyFilter] = useState('all');
+  // Deep-link filters: /transactions?search=avance&class=rental&property=green-crest&category=rental
+  // (used by the Business + Rent matrix drill-downs).
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get('search') || '');
+  const [categoryFilter, setCategoryFilter] = useState(params.get('category') || 'all');
+  const [classFilter, setClassFilter] = useState(params.get('class') || 'all');
+  const [propertyFilter, setPropertyFilter] = useState(params.get('property') || 'all');
   const [largeOnly, setLargeOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const largeThreshold = data?.preferences?.largeTxnThreshold || 500;

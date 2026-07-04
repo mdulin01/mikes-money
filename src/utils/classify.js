@@ -24,10 +24,14 @@ const RULES = [
   // ---- RETIREMENT INCOME (monthly IRA distributions started 2026) ----
   // Explicit distribution descriptors — high confidence.
   { kw: ['ira distribution', 'ira dist', 'req min dist', 'rmd payout', 'retirement distribution', 'periodic dist'], category: 'retirement-inc', klass: 'personal', inflow: true },
+  // TIAA pays a CONFIRMED recurring monthly retirement distribution (~$722, per Mike 2026-07-04)
+  // — high confidence, no review flag. TIAA holdings are manual (Plaid can't reach TIAA), so a
+  // TIAA inflow to checking is always the distribution, never a same-institution transfer.
+  { kw: ['tiaa'], category: 'retirement-inc', klass: 'personal', inflow: true },
   // Custodian ACH inflows to checking are usually the monthly IRA draw, but could also be a
   // taxable-brokerage transfer — flagged needsReview so a wrong guess is one tap to fix.
   // ✨-save the exact descriptor as a user rule once the first distribution posts.
-  { kw: ['vanguard', 'fid bkg svc', 'fidelity', 'tiaa'], category: 'retirement-inc', klass: 'personal', inflow: true, review: true },
+  { kw: ['vanguard', 'fid bkg svc', 'fidelity'], category: 'retirement-inc', klass: 'personal', inflow: true, review: true },
   // ---- TAXES (must precede TRANSFERS: "usataxpymt"/"web pmt" would otherwise match transfer) ----
   { kw: ['irs usataxpymt', 'usataxpymt', 'irs ', 'internal revenue', 'eftps', 'us treasury tax', 'treas tax', 'nc dept revenue', 'ncdor', 'nc department of revenue', 'department of revenue', 'dept revenue', 'estimated tax', '1040-es', 'nc-40', 'franchise tax'], category: 'taxes', klass: 'personal' },
   // ---- TRANSFERS (exclude from spend) ----

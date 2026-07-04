@@ -6,6 +6,7 @@ import { toLocalMonthStr, monthsBetween } from '../utils/dateUtils';
 import { rrSignIn, rrAuth, fetchRR, writeRRPayments, fetchRRReview, writeRRReview, autoMapProperties } from '../utils/rrSync';
 import { useRangeTxns } from '../hooks/useRangeTxns';
 import { useToast } from '../components/Toast';
+import TxnPopover from '../components/TxnPopover';
 
 // Rentals — rent received per property/month from BANK data (Plaid), reconciled and
 // auto-synced into rainbow-rentals so rent never has to be hand-entered there again.
@@ -49,6 +50,9 @@ export default function Rent({ data, accounts, updateConfig }) {
   }, [deposits]);
 
   const unassigned = deposits.filter(d => d.propId === 'unassigned');
+
+  // Cell drill-down: { title, txns, rrItems } → TxnPopover
+  const [detail, setDetail] = useState(null);
 
   // --- rainbow-rentals connection ---
   const [rr, setRR] = useState(null);          // { properties, payments }
@@ -128,6 +132,23 @@ export default function Rent({ data, accounts, updateConfig }) {
       return !(grid[mmId]?.[m]?.length);
     });
   }, [rr, propMap, grid, year]);
+
+  // RR-ledger payments folded into the matrix for months where bank data shows nothing —
+  // covers pre-Plaid history (BoA starts 1/23/26, Fifth Third 3/16/26: Jan rents for all
+  // units + Green Crest's Feb/Mar Avail payouts into 5/3 simply predate what Plaid can see)
+  // and manual/money-order rent Liam logged directly in rainbow-rentals.
+  const rrGrid = useMemo(() => {
+    const rrIdToMM = Object.fromEntries(Object.entries(propMap).map(([mm, rrId]) => [String(rrId), mm]));
+    const g = {};
+    for (const p of rrOnly) {
+      if (p.status && p.status !== 'paid' && p.status !== 'partial') continue;
+      const mmId = rrIdToMM[String(p.propertyId)];
+      if (!mmId) continue;
+      const m = p.month || (p.datePaid || '').slice(0, 7);
+      (g[mmId] = g[mmId] || {})[m] = [...(g[mmId]?.[m] || []), p];
+    }
+    return g;
+  }, [rrOnly, propMap]);
 
   const [syncing, setSyncing] = useState(false);
   const runSync = async () => {
@@ -331,7 +352,9 @@ export default function Rent({ data, accounts, updateConfig }) {
               <tbody>
                 {RENTAL_PROPS.map(p => {
                   const row = grid[p.id] || {};
-                  const ytd = Object.values(row).flat().reduce((s, d) => s + Math.abs(d.amount || 0), 0);
+                  const rrRow = rrGrid[p.id] || {};
+                  const bankYtd = Object.values(row).flat().reduce((s, d) => s + Math.abs(d.amount || 0), 0);
+                  const rrYtd = Object.values(rrRow).flat().reduce((s, d) => s + (d.amount || 0), 0);
                   const expected = expectedFor(p.id);
                   return (
                     <tr key={p.id} className="border-t border-slate-700/60">
@@ -341,26 +364,49 @@ export default function Rent({ data, accounts, updateConfig }) {
                       </td>
                       {months.map(m => {
                         const cell = row[m] || [];
+                        const rrCell = rrRow[m] || [];
                         const amt = cell.reduce((s, d) => s + Math.abs(d.amount || 0), 0);
+                        const rrAmt = rrCell.reduce((s, d) => s + (d.amount || 0), 0);
                         const review = cell.some(d => d.needsReview);
                         const short = expected != null && amt > 0 && amt < expected - 5;
+                        const openDetail = () => setDetail({
+                          title: `${p.nickname} — ${m}`,
+                          txns: cell,
+                          rrItems: rrCell,
+                        });
                         return (
-                          <td key={m} className="text-right px-1.5 mono-nums" title={cell.map(d => `${d.date} · ${d.merchantName || d.name}`).join('\n')}>
-                            {amt > 0
-                              ? <span className={short ? 'text-amber-300' : 'text-emerald-300'}>{money(amt)}{review && ' ⚠'}</span>
-                              : <span className={m === curMonth ? 'text-slate-600' : 'text-rose-400/70'}>—</span>}
+                          <td key={m} className="text-right px-1.5 mono-nums">
+                            {amt > 0 ? (
+                              <button onClick={openDetail}
+                                title={cell.map(d => `${d.date} · ${d.merchantName || d.name} · ${money(Math.abs(d.amount || 0), { cents: true })}`).join('\n') + '\n(click for detail)'}
+                                className={(short ? 'text-amber-300' : 'text-emerald-300') + ' hover:underline decoration-dotted underline-offset-2 cursor-pointer'}>
+                                {money(amt)}{review && ' ⚠'}
+                              </button>
+                            ) : rrAmt > 0 ? (
+                              <button onClick={openDetail}
+                                title={rrCell.map(d => `${d.datePaid || d.month} · ${d.tenantName || 'rent'} · ${money(d.amount || 0)} (Rainbow Rentals ledger)`).join('\n') + '\n(click for detail)'}
+                                className="text-sky-300/90 hover:underline decoration-dotted underline-offset-2 cursor-pointer">
+                                {money(rrAmt)}<span className="text-[9px] align-super">RR</span>
+                              </button>
+                            ) : (
+                              <span className={m === curMonth ? 'text-slate-600' : 'text-rose-400/70'}>—</span>
+                            )}
                           </td>
                         );
                       })}
-                      <td className="text-right pl-2 mono-nums font-semibold text-emerald-300">{money(ytd)}</td>
+                      <td className="text-right pl-2 mono-nums font-semibold text-emerald-300"
+                          title={rrYtd > 0 ? `${money(bankYtd)} bank deposits + ${money(rrYtd)} RR-ledger months` : undefined}>
+                        {money(bankYtd + rrYtd)}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
             <p className="text-[11px] text-slate-500 mt-2">
-              ⚠ = auto-detected, needs review on the Transactions page. Red — = no deposit found that month
-              (could be a money-order/manual payment — check Rainbow Rentals). Hover a cell for deposit details.
+              ⚠ = auto-detected, needs review on the Transactions page. <span className="text-sky-300/90">Blue·RR</span> = no bank
+              deposit visible (Plaid history starts BoA 1/23, 5/3 3/16 — Jan rents and Green Crest Feb/Mar predate it), amount
+              from the Rainbow Rentals ledger instead. Red — = missing in both. Hover for details, click to drill in.
             </p>
           </div>
         )}
@@ -484,6 +530,8 @@ export default function Rent({ data, accounts, updateConfig }) {
           </section>
         </>
       )}
+
+      {detail && <TxnPopover title={detail.title} txns={detail.txns} rrItems={detail.rrItems} onClose={() => setDetail(null)} />}
     </main>
   );
 }
