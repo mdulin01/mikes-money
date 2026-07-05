@@ -17,7 +17,7 @@ export const MORTGAGES_AS_OF = '2026-07-02';
 // ⚠ N. Elm's $302 Magnolia HOA cadence (monthly vs quarterly) needs verification with Liam.
 export const PURCHASES = {
   'north-elm':     { purchaseDate: '2024-01-03', purchasePrice: 200000, estValue: 226128, monthlyRent: 1425, monthlyOtherCosts: 302 },
-  'hillcrest':     { purchaseDate: '2024-06-27', purchasePrice: 360000, estValue: 380120, monthlyRent: 1650, monthlyOtherCosts: 511 }, // no escrow: tax ~$4,960/yr (est) + ins $1,167/yr (actual, 2026-07-05)
+  'hillcrest':     { purchaseDate: '2024-06-27', purchasePrice: 360000, estValue: 380120, monthlyRent: 1650, monthlyOtherCosts: 343 }, // no escrow: tax $2,947/yr + ins $1,167/yr (both actual, 2026-07-05)
   'green-crest':   { purchaseDate: '2024-09-30', purchasePrice: 200000, estValue: 254604, monthlyRent: 1725, monthlyOtherCosts: 80 },
   'prairie-trail': { purchaseDate: '2024-11-05', purchasePrice: 223000, estValue: 223000, monthlyRent: 1500, monthlyOtherCosts: 200 },
 };
