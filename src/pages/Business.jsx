@@ -202,10 +202,12 @@ export default function Business({ data, updateConfig }) {
     const ents = monthEntries.filter((e) => e.client === cid);
     const bill = computeBilling(cid, ents);
     const dates = ents.map((e) => e.date).filter(Boolean).sort();
+    // Period runs from the START of the first logged week (the reporting-period Monday,
+    // e.g. work logged 7/4 belongs to the week of 6/29) through the last entry.
     const periodLabel = dates.length
-      ? `${fmtLong(dates[0])} – ${fmtLong(dates[dates.length - 1])}, ${year}`
+      ? `${fmtLong(weekKeyOf(dates[0]))} – ${fmtLong(dates[dates.length - 1])}, ${year}`
       : fmtMonthYear(month);
-    const subjectPeriod = fmtMonthYear(month);
+    const subjectPeriod = periodLabel;
 
     let weeks;
     if (c.type === 'flat' || c.type === 'retainer') {
@@ -214,9 +216,11 @@ export default function Business({ data, updateConfig }) {
       const byWeek = {};
       for (const e of ents) { const k = weekKeyOf(e.date); (byWeek[k] = byWeek[k] || []).push(e); }
       weeks = Object.keys(byWeek).sort().map((k) => {
-        const acts = {};
-        for (const e of byWeek[k]) { const a = e.activity || 'clinical'; acts[a] = (acts[a] || 0) + Number(e.hours); }
-        const items = ACTIVITIES.filter((a) => acts[a.id]).map((a) => ({ desc: a.label, hours: acts[a.id] }));
+        // One detailed line per logged entry (activity + note), ordered by activity type.
+        const items = byWeek[k]
+          .slice()
+          .sort((a, b) => ACTIVITIES.findIndex((x) => x.id === (a.activity || 'clinical')) - ACTIVITIES.findIndex((x) => x.id === (b.activity || 'clinical')))
+          .map((e) => ({ desc: activityLabel(e.activity) + (e.note ? ' — ' + e.note : ''), hours: Number(e.hours) }));
         const wkHours = items.reduce((s, i) => s + i.hours, 0);
         if (c.type === 'weekly-min' && wkHours < c.minHrs)
           items.push({ desc: `Weekly minimum (${c.minHrs} hr/wk)`, hours: c.minHrs - wkHours });
