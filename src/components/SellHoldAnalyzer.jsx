@@ -3,6 +3,8 @@ import { money, pct } from '../utils/format';
 import { MORTGAGES, PURCHASES } from '../data/mortgages';
 import { monthsUntil } from '../utils/amortize';
 import { compare, yearsHeld } from '../utils/sellHold';
+import { computeAge } from '../utils/dateUtils';
+import { USER_PROFILE } from '../constants';
 
 // Sell-vs-hold analyzer — per rental: after-tax proceeds if sold now (invested at the
 // alternative return) vs holding (cash flows + sale at the horizon), future-value
@@ -50,6 +52,16 @@ export default function SellHoldAnalyzer({ data, updateConfig }) {
     .sort((x, y) => x.r.edge - y.r.edge), [a, overrides]);
 
   const totalSellNow = rows.reduce((s, { r }) => s + r.sellNow.netProceeds, 0);
+
+  // Wire a sale's after-tax proceeds into the Retirement planner as a one-time event —
+  // replaces retyping the number there (and going stale when assumptions change here).
+  const sendToRetirement = (label, amount) => {
+    const age = (computeAge(USER_PROFILE.birthdate) ?? 59) + 1;
+    const retirement = data?.retirement || {};
+    const tag = `${label} sale (net)`;
+    const rest = (retirement.lumpSums || []).filter(l => l.label !== tag);
+    updateConfig({ retirement: { ...retirement, lumpSums: [...rest, { age, amount: Math.round(amount), label: tag }] } });
+  };
 
   return (
     <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
@@ -126,7 +138,11 @@ export default function SellHoldAnalyzer({ data, updateConfig }) {
                   </td>
                   <td className="px-2 text-right mono-nums text-slate-400">{money(Math.round(r.fvSell / 1000))}k / {money(Math.round(r.fvHold / 1000))}k</td>
                   <td className="px-2 text-right mono-nums text-slate-300">{r.breakeven == null ? '>10%' : pct(r.breakeven, 2)}</td>
-                  <td className={`pl-2 text-right font-bold ${verdict.c}`}>{verdict.t}<div className="text-[10px] font-normal text-slate-500">{r.edge >= 0 ? '+' : ''}{money(Math.round(r.edge / 1000))}k</div></td>
+                  <td className={`pl-2 text-right font-bold ${verdict.c}`}>{verdict.t}<div className="text-[10px] font-normal text-slate-500">{r.edge >= 0 ? '+' : ''}{money(Math.round(r.edge / 1000))}k</div>
+                    <button onClick={() => sendToRetirement(p.nickname, r.sellNow.netProceeds)}
+                      className="block ml-auto mt-1 text-[10px] font-normal text-sky-400 hover:text-sky-300"
+                      title="Add after-tax net proceeds as a one-time event in the Retirement planner">→ Retirement</button>
+                  </td>
                 </tr>
               );
             })}

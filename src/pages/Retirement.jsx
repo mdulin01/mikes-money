@@ -7,25 +7,36 @@ import { effectiveCategory } from '../utils/classify';
 import { useRangeTxns } from '../hooks/useRangeTxns';
 import { USER_PROFILE } from '../constants';
 import TransitionTimeline from '../components/TransitionTimeline';
+import { DEFAULT_ENGAGEMENTS, engagementGross, grossAtAge, hoursPerWeekAtAge } from '../utils/engagements';
+import { netFrom1099, rothRoomTo24, ssFactor, SOLO_401K } from '../utils/tax2026';
 import RothRmdPlanner from '../components/RothRmdPlanner';
 
 // Current age always computed from birthdate — stays correct as time passes.
 const CURRENT_AGE = computeAge(USER_PROFILE.birthdate) ?? 50;
 
-// Defaults tuned to match Empower's retirement planner inputs so you can cross-check.
+// Defaults reset Aug 2026 to the "runway brief" baseline: engagement-driven income,
+// $11k/mo living spend, UNCC retiree health coverage, Folio budget as its own line,
+// SS as PIA at FRA 67 claimed at 70, and NO inheritance in the base case (add it as a
+// one-time event to see the upside — a plan that works without it is the plan).
 // Override in the UI or save your own via "Save inputs".
 const DEFAULTS = {
   startAge: CURRENT_AGE,
-  retireAge: 60,
-  endAge: 90,
-  annualContribution: 125000,
-  contributionGrowthRate: 0.005,
-  annualSpend: 150000,
+  retireAge: 60,              // legacy — ignored while engagements exist
+  endAge: 95,
+  annualContribution: 0,      // legacy — ignored while engagements exist
+  contributionGrowthRate: 0,
+  annualSpend: 132000,
   spendGrowthRate: -0.005,
   stockPct: 0.7,
-  socialSecurity: 34632,
-  ssStartAge: 63,
-  lumpSums: [{ age: 67, amount: 2000000, label: 'Inheritance' }],
+  socialSecurity: 35000,      // PIA at FRA 67; claiming factor applied in the sim
+  ssStartAge: 70,
+  healthPre65: 4200,          // UNCC retiree plan $350/mo until Medicare
+  healthPost65: 3000,         // UNCC $35/mo + Part B (IRMAA extra not modeled here)
+  ventureAnnual: 40000,       // Folio cash budget, on top of living spend
+  ventureYears: 2,
+  withdrawalTaxRate: 0.20,    // blended tax on portfolio draws (~80% of the pool is pre-tax)
+  engagements: DEFAULT_ENGAGEMENTS,
+  lumpSums: [],
   runs: 1000,
 };
 
@@ -76,7 +87,35 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
     inputs.annualSpend, inputs.spendGrowthRate,
     inputs.stockPct, inputs.socialSecurity, inputs.ssStartAge,
     JSON.stringify(inputs.lumpSums || []), inputs.runs,
+    JSON.stringify(inputs.engagements || []),
+    inputs.healthPre65, inputs.healthPost65, inputs.ventureAnnual, inputs.ventureYears,
+    inputs.withdrawalTaxRate,
   ]);
+
+  // ── Engagement editing ──
+  const addEngagement = () => setInputs(s => ({
+    ...s,
+    engagements: [...(s.engagements || []), { id: `e${Date.now()}`, label: 'New engagement', hoursPerWeek: 0, rate: 250, weeksPerYear: 46, annualAmount: 0, throughAge: CURRENT_AGE + 2 }],
+  }));
+  const updateEngagement = (i, patch) => setInputs(s => ({
+    ...s,
+    engagements: (s.engagements || []).map((e, idx) => idx === i ? { ...e, ...patch } : e),
+  }));
+  const removeEngagement = (i) => setInputs(s => ({
+    ...s,
+    engagements: (s.engagements || []).filter((_, idx) => idx !== i),
+  }));
+
+  // Year-1 work economics — the "what does this contract actually pay" readout.
+  const work = useMemo(() => {
+    const gross = grossAtAge(inputs.engagements || [], CURRENT_AGE + 1);
+    const t = netFrom1099(gross);
+    return {
+      gross, net: t.net, effRate: t.effRate,
+      rothRoom: rothRoomTo24(gross),
+      hours: hoursPerWeekAtAge(inputs.engagements || [], CURRENT_AGE + 1),
+    };
+  }, [inputs.engagements]);
 
   const addLumpSum = () => setInputs(s => ({
     ...s,
@@ -210,7 +249,7 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
       {result && (
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Tile label="Success rate" value={pct(successRate, 0)} big tone={successColor}
-                hint="% of runs where portfolio survives to age 95" />
+                hint={`% of runs where portfolio survives to age ${inputs.endAge}`} />
           <Tile label="Median ending" value={money(result.medianEndBalance)}
                 tone="text-slate-100" />
           <Tile label="Pessimistic (p10)" value={money(result.p10EndBalance)}
@@ -259,8 +298,59 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
         </div>
         <p className="text-xs text-slate-500 mt-2">
           Green line = median outcome. Shaded band = 10th to 90th percentile. Assumes independent annual returns
-          (US stocks 7% real ±17%, bonds 2% ±6%). Sequence-of-returns risk and correlation aren't modeled.
+          (US stocks 5% real ±15%, bonds 2% ±6%). Social Security is entered as the PIA at FRA 67 — the sim applies
+          the claiming factor ({pct(ssFactor(inputs.ssStartAge) - 1, 0)} at {inputs.ssStartAge}). Sequence-of-returns
+          risk and correlation aren't modeled.
         </p>
+      </section>
+
+      {/* Work & engagements — hours × rate per client, feeding the projection directly */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-semibold text-slate-300">💼 Work & engagements</h2>
+          <button onClick={addEngagement} className="text-xs text-emerald-400 hover:text-emerald-300">+ Add engagement</button>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          Income is modeled per engagement (hours × rate, or a flat amount) through the age you set,
+          taxed as 1099 (SE + 2026 federal + NC 3.99%). Surplus over spending is 60% invested.
+        </p>
+        {(inputs.engagements || []).length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+            <Tile label="Gross (next yr)" value={money(work.gross)} />
+            <Tile label="After tax" value={money(Math.round(work.net))} hint={`${pct(work.effRate, 0)} total tax`} />
+            <Tile label="Hours / wk sold" value={work.hours.toFixed(0)} hint="weekday hours not sold fund Folio" />
+            <Tile label="Roth room at 24%" value={money(Math.round(work.rothRoom))}
+                  tone={work.rothRoom > 0 ? 'text-emerald-400' : 'text-rose-400'}
+                  hint="conversion room before the 32% bracket" />
+            <Tile label="Solo-401(k) max" value={money(SOLO_401K.deferral + (CURRENT_AGE >= 60 && CURRENT_AGE <= 63 ? SOLO_401K.catchUp60to63 : SOLO_401K.catchUp50))}
+                  hint="Roth deferral + catch-up (2026)" />
+          </div>
+        )}
+        <ul className="space-y-2">
+          {(inputs.engagements || []).map((e, i) => (
+            <li key={e.id || i} className="grid grid-cols-12 gap-2 items-center text-sm">
+              <input value={e.label || ''} onChange={(ev) => updateEngagement(i, { label: ev.target.value })}
+                className="col-span-3 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1" />
+              <label className="col-span-2 text-xs text-slate-500">hrs/wk
+                <input type="number" value={e.hoursPerWeek ?? 0} onChange={(ev) => updateEngagement(i, { hoursPerWeek: Number(ev.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" /></label>
+              <label className="col-span-2 text-xs text-slate-500">$/hr
+                <input type="number" value={e.rate ?? 0} onChange={(ev) => updateEngagement(i, { rate: Number(ev.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" /></label>
+              <label className="col-span-2 text-xs text-slate-500">flat $/yr
+                <input type="number" value={e.annualAmount ?? 0} onChange={(ev) => updateEngagement(i, { annualAmount: Number(ev.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" /></label>
+              <label className="col-span-1 text-xs text-slate-500">thru age
+                <input type="number" value={e.throughAge ?? ''} onChange={(ev) => updateEngagement(i, { throughAge: Number(ev.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums text-right" /></label>
+              <div className="col-span-1 text-right mono-nums text-slate-300 text-xs">{money(engagementGross(e))}</div>
+              <button onClick={() => removeEngagement(i)} className="col-span-1 text-slate-500 hover:text-rose-400 text-xs">✕</button>
+            </li>
+          ))}
+        </ul>
+        {(inputs.engagements || []).length === 0 && (
+          <p className="text-xs text-slate-500">No engagements — the sim falls back to the legacy retire-age / annual-contribution inputs below.</p>
+        )}
       </section>
 
       {/* Inputs */}
@@ -299,6 +389,21 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           </Field>
           <Field label="SS start age">
             <input type="number" value={inputs.ssStartAge} onChange={(e) => setField('ssStartAge')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label="Health $/yr to 65 (UNCC $350/mo)">
+            <input type="number" value={inputs.healthPre65 ?? 0} onChange={(e) => setField('healthPre65')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label="Health $/yr from 65 ($35/mo + Part B)">
+            <input type="number" value={inputs.healthPost65 ?? 0} onChange={(e) => setField('healthPost65')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label="Folio budget $/yr (on top of spend)">
+            <input type="number" value={inputs.ventureAnnual ?? 0} onChange={(e) => setField('ventureAnnual')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label="Folio years">
+            <input type="number" value={inputs.ventureYears ?? 0} onChange={(e) => setField('ventureYears')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
+          </Field>
+          <Field label={`Tax on portfolio draws (${Math.round((inputs.withdrawalTaxRate ?? 0) * 100)}%)`}>
+            <input type="number" step="0.01" min="0" max="0.35" value={inputs.withdrawalTaxRate ?? 0} onChange={(e) => setField('withdrawalTaxRate')(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 mono-nums" />
           </Field>
         </div>
 
