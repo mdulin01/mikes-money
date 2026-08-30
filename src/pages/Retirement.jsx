@@ -136,6 +136,26 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
     updateConfig({ retirement: inputs });
   };
 
+  // ── Scenario shelf: save the current inputs under a name, compare side by side ──
+  const scenarios = data?.retirement?.scenariosV2 || [];
+  const [scenarioName, setScenarioName] = useState('');
+  const saveScenario = () => {
+    const name = scenarioName.trim() || `Scenario ${scenarios.length + 1}`;
+    const next = [...scenarios.filter(x => x.name !== name),
+      { id: crypto.randomUUID(), name, savedAt: new Date().toISOString(), inputs: { ...inputs } }].slice(-4);
+    updateConfig({ retirement: { ...(data?.retirement || {}), scenariosV2: next } });
+    setScenarioName('');
+  };
+  const deleteScenario = (id) => updateConfig({
+    retirement: { ...(data?.retirement || {}), scenariosV2: scenarios.filter(x => x.id !== id) },
+  });
+  const applyScenario = (sc) => setInputs(prev => ({ ...prev, ...sc.inputs, startAge: CURRENT_AGE }));
+  const scenarioResults = useMemo(() => scenarios.map(sc => {
+    const r = simulate({ ...sc.inputs, startAge: CURRENT_AGE, runs: 400 });
+    const hrs = (sc.inputs.engagements || []).reduce((h, e) => h + (Number(e.hoursPerWeek) || 0), 0);
+    return { ...sc, success: r.successRate, median: r.medianEndBalance, hrs };
+  }), [scenarios]);
+
   const chartData = useMemo(() => {
     if (!result) return [];
     return result.ages.map((age, i) => ({
@@ -302,6 +322,48 @@ export default function Retirement({ netWorth, investmentsTotal, data, updateCon
           the claiming factor ({pct(ssFactor(inputs.ssStartAge) - 1, 0)} at {inputs.ssStartAge}). Sequence-of-returns
           risk and correlation aren't modeled.
         </p>
+      </section>
+
+      {/* Scenario shelf — ProjectionLab-style side-by-side compare */}
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 className="text-sm font-semibold text-slate-300">🗂️ Scenarios, side by side</h2>
+          <div className="flex items-center gap-2">
+            <input
+              value={scenarioName}
+              onChange={(e) => setScenarioName(e.target.value)}
+              placeholder="name — e.g. 10h · 5yrs"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs w-40"
+            />
+            <button onClick={saveScenario} className="text-xs text-emerald-400 hover:text-emerald-300">
+              + Save current
+            </button>
+          </div>
+        </div>
+        {scenarioResults.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            Tune the inputs below, then save up to four named scenarios ("stop now", "10h · 5yrs", "counter at 15h")
+            to compare success side by side. This replaces the old Scenarios page.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {scenarioResults.map(sc => (
+              <div key={sc.id} className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3">
+                <div className="text-xs text-slate-300 font-medium truncate">{sc.name}</div>
+                <div className={`text-2xl font-bold mono-nums mt-1 ${sc.success >= 0.9 ? 'text-emerald-400' : sc.success >= 0.75 ? 'text-amber-300' : 'text-rose-400'}`}>
+                  {pct(sc.success, 0)}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {sc.hrs} hrs/wk · spend {money(sc.inputs.annualSpend || 0)} · median {money(Math.round(sc.median))}
+                </div>
+                <div className="flex gap-2 mt-2 text-[11px]">
+                  <button onClick={() => applyScenario(sc)} className="text-sky-400 hover:text-sky-300">load</button>
+                  <button onClick={() => deleteScenario(sc.id)} className="text-slate-500 hover:text-rose-400">delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Work & engagements — hours × rate per client, feeding the projection directly */}

@@ -21,7 +21,7 @@ import Transactions from './pages/Transactions';
 import Tax from './pages/Tax';
 import Budgets from './pages/Budgets';
 import CashFlow from './pages/CashFlow';
-import Scenarios from './pages/Scenarios';
+import Handoff from './pages/Handoff';
 import Business from './pages/Business';
 import Rent from './pages/Rent';
 import Mortgages from './pages/Mortgages';
@@ -55,7 +55,7 @@ export default function App() {
             <Route path="/business" element={<Business {...money} />} />
             <Route path="/rent" element={<Rent {...money} />} />
             <Route path="/mortgages" element={<Mortgages {...money} />} />
-            <Route path="/scenarios" element={<Scenarios {...money} />} />
+            <Route path="/handoff" element={<Handoff {...money} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </RefreshControl>

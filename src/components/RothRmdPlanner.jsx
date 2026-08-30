@@ -3,6 +3,8 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { money } from '../utils/format';
 import { USER_PROFILE } from '../constants';
 import { IRMAA_TIERS, tierFor, tierIndex } from './TransitionTimeline';
+import { grossAtAge } from '../utils/engagements';
+import { rothRoomTo24, netFrom1099 } from '../utils/tax2026';
 
 // Roth-conversion / RMD / IRMAA planner — the "open item #3/#4" from ROTH_IRMAA_PLAN.md.
 //
@@ -69,6 +71,34 @@ export default function RothRmdPlanner({ data, updateConfig }) {
   const set = (k) => (e) => setInp(s => ({ ...s, [k]: Number(e.target.value) || 0 }));
   const save = () => updateConfig({ rothPlanner: inp });
 
+  // Boldin-style suggestion: fill the 24% bracket with conversions in the
+  // low-income window (now → convertThrough), sized from the engagements the
+  // Retirement page already knows. Conservative: uses the SMALLEST room across
+  // the window years so one number fits every year.
+  const engagements = data?.retirement?.engagements || [];
+  const suggestion = useMemo(() => {
+    const startAge = THIS_YEAR - BIRTH_YEAR;
+    const endAge = (inp.convertThrough || THIS_YEAR) - BIRTH_YEAR;
+    if (endAge < startAge) return null;
+    const rows = [];
+    for (let age = startAge; age <= endAge; age++) {
+      const gross = grossAtAge(engagements, age + 1);
+      rows.push({ year: BIRTH_YEAR + age, gross, room: rothRoomTo24(gross) });
+    }
+    const room = Math.min(...rows.map(r => r.room));
+    return { rows, room };
+  }, [engagements, inp.convertThrough]);
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    const gross = grossAtAge(engagements, THIS_YEAR - BIRTH_YEAR + 1);
+    setInp(s => ({
+      ...s,
+      convertPerYear: Math.round(suggestion.room / 1000) * 1000,
+      marginalRate: 0.24 + 0.0399,                     // conversions priced at 24% fed + NC
+      otherIncome: Math.round(netFrom1099(gross).taxable),  // taxable comp from engagements
+    }));
+  };
+
   const base = useMemo(() => project(inp, false), [inp]);
   const plan = useMemo(() => project(inp, true), [inp]);
   const hasConv = inp.convertPerYear > 0;
@@ -107,6 +137,22 @@ export default function RothRmdPlanner({ data, updateConfig }) {
         <h2 className="text-sm font-semibold text-slate-300">🔄 Roth conversion / RMD / IRMAA planner</h2>
         <button onClick={save} className="text-xs text-slate-400 hover:text-slate-200">Save inputs</button>
       </div>
+      {suggestion && (
+        <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mb-3 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              💡 Engagement-aware suggestion: convert <span className="mono-nums text-emerald-300">{money(suggestion.room)}</span>/yr
+              through {inp.convertThrough} — fills the 24% bracket in every window year without spilling into 32%.
+            </span>
+            <button onClick={applySuggestion} className="text-emerald-400 hover:text-emerald-300">apply</button>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
+            {suggestion.rows.map(r => (
+              <span key={r.year} className="mono-nums">{r.year}: room {money(r.room)}</span>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="text-xs text-slate-500 mb-4">
         Pre-tax IRA pool only (rollover + SEP), real dollars, deterministic. Conversions before age 63 ({BIRTH_YEAR + 63}) never touch
         your Medicare premium; RMDs start at 75 ({BIRTH_YEAR + 75}). See ROTH_IRMAA_PLAN.md for the full strategy write-up.

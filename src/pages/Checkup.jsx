@@ -3,7 +3,7 @@ import { money, pct } from '../utils/format';
 import { classifyHolding, ASSET_CLASSES } from '../utils/assetClass';
 import { computeSectorTotals } from '../utils/sectorMap';
 import { estimatedMonthlySpend } from '../utils/insights';
-import { allocateHoldings, ASSET_CLASSES as ALLOC_CLASSES } from '../utils/assetClass';
+import { allocateHoldings } from '../utils/assetClass';
 
 // Expense ratios for common tickers (annual %). Source: fund prospectuses.
 // Extend this list as needed — missing tickers show as "unknown".
@@ -75,16 +75,18 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
   }, [holdings, investmentsTotal]);
 
   // --- Fee analysis ---
+  const feeOverrides = data?.feeOverrides || {};   // { TICKER: expense ratio } user-entered
   const feeAnalysis = useMemo(() => {
     let weighted = 0, total = 0, unknown = 0;
     const breakdown = [];
+    const unknownList = [];
     for (const h of holdings) {
       const t = (h.ticker || '').toUpperCase();
-      const er = EXPENSE_RATIOS[t];
+      const er = feeOverrides[t] ?? EXPENSE_RATIOS[t];
       const value = h.institutionValue || 0;
       if (!value) continue;
       total += value;
-      if (er == null) unknown += value;
+      if (er == null) { unknown += value; if (t) unknownList.push({ ticker: t, name: h.name, value }); }
       else {
         weighted += er * value;
         breakdown.push({ ticker: t, name: h.name, value, er, annualCost: er * value });
@@ -96,8 +98,29 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
       unknown,
       unknownPct: total > 0 ? unknown / total : 0,
       breakdown: breakdown.sort((a, b) => b.annualCost - a.annualCost),
+      unknownList: unknownList.sort((a, b) => b.value - a.value).slice(0, 8),
     };
-  }, [holdings]);
+  }, [holdings, feeOverrides]);
+
+  const setFeeOverride = (ticker, er) => {
+    const next = { ...feeOverrides };
+    if (er == null || Number.isNaN(er)) delete next[ticker];
+    else next[ticker] = er;
+    updateConfig?.({ feeOverrides: next });
+  };
+
+  // --- Target allocation vs actual (Empower-Checkup style, tax-aware hint) ---
+  const alloc = useMemo(() => allocateHoldings(holdings || []), [holdings]);
+  const targetMix = data?.preferences?.targetMix || {};
+  const hasTargets = Object.values(targetMix).some(v => v > 0);
+  const saveTarget = (id, v) => updateConfig?.({
+    preferences: { ...(data?.preferences || {}), targetMix: { ...targetMix, [id]: v } },
+  });
+  const driftRows = useMemo(() => alloc.map(a => {
+    const target = (targetMix[a.id] || 0) / 100;
+    return { ...a, target, drift: a.pct - target, driftDollars: (a.pct - target) * (investmentsTotal || 0) };
+  }), [alloc, targetMix, investmentsTotal]);
+  const maxDrift = hasTargets ? Math.max(...driftRows.map(r => Math.abs(r.drift))) : 0;
 
   // --- Fund overlap: multiple holdings in same class with same ticker prefix family ---
   const overlaps = useMemo(() => {
@@ -138,6 +161,7 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
     { ok: concentrations.length === 0, label: 'Single-stock concentration' },
     sectorAnalysis && { ok: sectorAnalysis.hot.length === 0, label: 'Sector concentration' },
     { ok: feeAnalysis.weightedAvg < 0.005, label: 'Expense ratios under 0.5%' },
+    hasTargets && { ok: maxDrift <= 0.05, label: 'Allocation within 5% of target' },
     { ok: overlaps.length <= 1, label: 'Fund overlap minimal' },
   ].filter(Boolean);
 
@@ -261,10 +285,73 @@ export default function Checkup({ holdings, accounts, data, investmentsTotal, re
             </ul>
           </details>
         )}
+        <p className="text-sm mt-2 text-slate-300">
+          At today's balances that's <span className="font-mono text-amber-300">{money(feeAnalysis.annualCost * 10)}</span> over
+          the next decade — the Empower-style number worth staring at once.
+        </p>
+        {feeAnalysis.unknownList?.length > 0 && (
+          <details className="mt-3">
+            <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-200">
+              Add missing expense ratios ({feeAnalysis.unknownList.length})
+            </summary>
+            <ul className="divide-y divide-slate-700/40 text-sm mt-2">
+              {feeAnalysis.unknownList.map(u => (
+                <li key={u.ticker} className="py-1.5 flex items-center gap-2">
+                  <span className="font-mono text-emerald-300 w-20">{u.ticker}</span>
+                  <span className="flex-1 truncate text-slate-400 text-xs">{u.name}</span>
+                  <span className="mono-nums text-slate-500 w-24 text-right text-xs">{money(u.value)}</span>
+                  <label className="text-xs text-slate-500">ER %
+                    <input
+                      type="number" step="0.01" min="0" max="3" placeholder="0.05"
+                      defaultValue={feeOverrides[u.ticker] != null ? (feeOverrides[u.ticker] * 100) : ''}
+                      onBlur={(e) => { const v = e.target.value === '' ? null : Number(e.target.value) / 100; setFeeOverride(u.ticker, v); }}
+                      className="w-16 ml-1 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right mono-nums"
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500 mt-1">From the fund's page ("expense ratio"); saves per ticker.</p>
+          </details>
+        )}
         <p className="text-xs text-slate-500 mt-2">
           Broad index funds run 0.03-0.10%. Actively managed funds often 0.5-1.5%. Shifting high-fee
           funds to equivalent index funds can save thousands/year on a decent portfolio.
         </p>
+      </Card>
+
+      {/* Target allocation vs actual */}
+      <Card title="Target mix vs actual" good={!hasTargets || maxDrift <= 0.05}>
+        {!hasTargets && (
+          <p className="text-sm text-slate-400 mb-2">
+            Set a target % per asset class to see drift. (They don't need to total 100 — untargeted classes are ignored.)
+          </p>
+        )}
+        <ul className="divide-y divide-slate-700/40 text-sm">
+          {driftRows.map(r => (
+            <li key={r.id} className="py-1.5 grid grid-cols-12 items-center gap-2">
+              <span className="col-span-4 text-slate-300 truncate">{r.label}</span>
+              <span className="col-span-2 mono-nums text-right text-slate-400">{pct(r.pct, 0)}</span>
+              <label className="col-span-3 text-right text-xs text-slate-500">target
+                <input
+                  type="number" min="0" max="100" step="1"
+                  value={targetMix[r.id] ?? ''}
+                  placeholder="—"
+                  onChange={(e) => saveTarget(r.id, e.target.value === '' ? 0 : Number(e.target.value))}
+                  className="w-14 ml-1 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right mono-nums"
+                />%
+              </label>
+              <span className={`col-span-3 mono-nums text-right ${!hasTargets || !r.target ? 'text-slate-600' : Math.abs(r.drift) <= 0.05 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                {r.target ? `${r.drift >= 0 ? '+' : ''}${(r.drift * 100).toFixed(0)}% (${money(Math.round(r.driftDollars))})` : '—'}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {hasTargets && maxDrift > 0.05 && (
+          <p className="text-xs text-slate-500 mt-2">
+            Rebalance inside the IRA/SEP first — trades there have no tax consequence; selling in taxable realizes gains.
+          </p>
+        )}
       </Card>
 
       {/* Overlap */}
