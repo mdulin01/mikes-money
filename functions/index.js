@@ -334,6 +334,26 @@ async function snapshotNetWorthNow() {
     recordedAt: FieldValue.serverTimestamp(),
   });
 
+  // Also seed the day's dashboardSnapshots doc (Rupert's read surface) so a
+  // snapshot exists for EVERY day, not just days the app gets opened. This is
+  // a balances-only skeleton marked source:'scheduled'; when Mike opens the
+  // app the same day, useDailySnapshot overwrites it with the richer
+  // client-computed version (flows, coverage, allocation, insights).
+  const dashRef = database.collection('dashboardSnapshots').doc(dateStr);
+  const dashExisting = await dashRef.get();
+  if (!dashExisting.exists) {
+    await dashRef.set({
+      date: dateStr,
+      source: 'scheduled',
+      netWorth, assets, liabilities,
+      cash, investments,
+      accountCount: acctsSnap.size,
+      holdingCount: holdingsSnap.size,
+      asOf: FieldValue.serverTimestamp(),
+      note: 'Balances-only skeleton from the scheduled function; flows/coverage require an app session.',
+    });
+  }
+
   return { ok: true, date: dateStr, netWorth, assets, liabilities };
 }
 
