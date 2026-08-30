@@ -33,8 +33,8 @@ export const SECTIONS = [
   { id: 'business',    label: 'Business',    emoji: '💼' },
   { id: 'rent',        label: 'Rentals',     emoji: '🏘️' },
   { id: 'mortgages',   label: 'Mortgages',   emoji: '🏦' },
-  { id: 'scenarios',   label: 'Scenarios',   emoji: '🔮' },
   { id: 'tax',         label: 'Tax',         emoji: '🧾' },
+  { id: 'handoff',     label: 'Handoff',     emoji: '🤝' },
 ];
 
 // Plaid account types → internal classification

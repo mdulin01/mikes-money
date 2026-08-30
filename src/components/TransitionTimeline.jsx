@@ -55,7 +55,7 @@ export default function TransitionTimeline({ data, updateConfig, investmentsTota
     { age: 59.5, title: 'Penalty-free IRA withdrawals', note: 'Monthly distributions are penalty-free — ordinary income only. Log them under the Retirement Income category so the Tax page set-aside stays right.' },
     { age: 63, title: 'IRMAA lookback begins', note: 'Medicare premiums at 65 are set by MAGI from this year (2-year lookback). Big Roth conversions / capital gains after this point raise your first Medicare premiums.' },
     { age: 64.75, title: 'Medicare enrollment window opens', note: 'Initial Enrollment Period = 3 months before the month you turn 65 through 3 months after. Missing it means late penalties on Part B for life.' },
-    { age: 65, title: 'Medicare starts', note: 'Part B premium depends on the IRMAA tier below. Compare Medigap vs Medicare Advantage before the window.' },
+    { age: 65, title: 'Medicare starts — UNCC coverage drops to $35/mo', note: 'UNCC retiree plan goes from $350/mo to $35/mo alongside Medicare. You still pay Part B, whose premium depends on the IRMAA tier below (set by the age-63 MAGI).' },
     { age: 67, title: 'Social Security FRA', note: 'Full retirement age (born 1960+). Claiming at 62 cuts ~30%; each year of delay past 67 adds 8% until 70.' },
     { age: 70, title: 'Max Social Security', note: 'No benefit to delaying past 70 — claim by now.' },
     { age: 75, title: 'RMDs begin', note: 'SECURE 2.0: born 1960+ → first Required Minimum Distribution at 75 (2042), not 73. Years 65–75 are the window for Roth conversions at lower brackets.' },
@@ -65,6 +65,15 @@ export default function TransitionTimeline({ data, updateConfig, investmentsTota
     <section className="bg-slate-800 border border-slate-700 rounded-xl p-4">
       <h2 className="text-sm font-semibold text-slate-300 mb-1">🗺️ Transition timeline</h2>
       <p className="text-xs text-slate-500 mb-4">Age {ageNow?.toFixed(1)} · milestones computed from your birthdate</p>
+
+      {/* Health coverage — the line the timeline used to skip */}
+      <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mb-4 text-xs text-slate-400">
+        <span className="text-slate-300 font-semibold">🏥 Health coverage:</span> UNCC retiree plan
+        — <span className="mono-nums text-sky-300">$350/mo</span> until Medicare at 65, then
+        <span className="mono-nums text-sky-300"> $35/mo</span> + Part B (IRMAA tier below).
+        Eligibility rides on receiving the monthly TIAA/ORP distribution (~$1k/mo) —
+        <span className="text-amber-300"> never let that distribution lapse</span>.
+      </div>
 
       {/* Current draw pace */}
       <div className="grid grid-cols-3 gap-3 mb-4">

@@ -26,6 +26,9 @@ export function useDailySnapshot({
   retirementSuccess,
   withdrawalRate,
   cashRunwayMonths,
+  coverage,
+  withdrawalRateActual,
+  receivables,
   avgMonthlySpend,
   byType,
   investmentsTotal,
@@ -48,7 +51,9 @@ export function useDailySnapshot({
     (async () => {
       try {
         const existing = await getDoc(ref);
-        if (existing.exists()) return; // already written today
+        // A scheduled-function skeleton (balances only) gets UPGRADED by the richer
+        // client snapshot; a client snapshot is final for the day.
+        if (existing.exists() && existing.data()?.source !== 'scheduled') return;
 
         // Net worth history-based deltas
         const sorted = [...(netWorthHistory || [])]
@@ -121,6 +126,9 @@ export function useDailySnapshot({
           retirementSuccess: retirementSuccess ?? null,
           withdrawalRate: withdrawalRate ?? null,
           cashRunwayMonths: cashRunwayMonths ?? null,
+          coverage: coverage ?? null,               // earned ÷ spend, this month
+          withdrawalRateActual: withdrawalRateActual ?? null, // measured ttm draws ÷ investable
+          receivables: receivables ?? null,         // unpaid invoices (near-cash)
           avgMonthlySpend: avgMonthlySpend ?? null,
 
           // Asset/liability breakdown
@@ -180,6 +188,9 @@ export function useDailySnapshot({
     retirementSuccess,
     withdrawalRate,
     cashRunwayMonths,
+    coverage,
+    withdrawalRateActual,
+    receivables,
     avgMonthlySpend,
     byType,
     investmentsTotal,

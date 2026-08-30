@@ -1,4 +1,4 @@
-import { classify, effectiveCategory } from '../utils/classify';
+import { classify, effectiveCategory, makeCatOf } from '../utils/classify';
 import { monthFlows } from '../utils/cashflow';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -390,14 +390,21 @@ export function useMoneyData(user) {
 
   // Current-month cash-flow buckets (earned / retirement draws / refunds / spend).
   // Spend nets credit-card refunds; savings rate uses EARNED income only — see utils/cashflow.js.
+  // acctById + the ONE live category resolver every spend surface shares.
+  // makeCatOf layers structural credit-card-payment pair-matching on top of
+  // user rules + stored categories + built-in keyword rules, so a payment leg
+  // can never count as spend (or income) anywhere in the app.
+  const acctById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
+  const catOf = useMemo(
+    () => makeCatOf(recentTxns, acctById, data?.userRules),
+    [recentTxns, acctById, data?.userRules],
+  );
+
   const flows = useMemo(() => {
     const m = toLocalMonthStr();
     const ignored = new Set(data?.ignoredAccounts || []);
-    const acctById = Object.fromEntries(accounts.map(a => [a.id, a]));
-    // Live classification (user rules + built-ins) so uncategorized txns bucket correctly.
-    const catOf = (t) => { const c = effectiveCategory(t, acctById, data?.userRules); return c === 'uncategorized' ? null : c; };
     return monthFlows(recentTxns.filter(t => !ignored.has(t.accountId)), acctById, m, catOf);
-  }, [recentTxns, accounts, data]);
+  }, [recentTxns, acctById, catOf, data?.ignoredAccounts]);
 
   const currentMonthSpend = flows.spend;
 
@@ -453,6 +460,8 @@ export function useMoneyData(user) {
     investmentsTotal,
     currentMonthSpend,
     flows,
+    catOf,
+    acctById,
     updateConfig,
     setBudget,
     deleteBudget,

@@ -5,11 +5,16 @@ import { ACCOUNT_TYPES } from '../constants';
 import NetWorthChart from '../components/NetWorthChart';
 import NetWorthBreakdown from '../components/NetWorthBreakdown';
 import { simulate } from '../utils/monteCarlo';
-import { generateInsights, cashRunwayMonths, estimatedMonthlySpend, withdrawalRate } from '../utils/insights';
+import { generateInsights, cashRunwayMonths, estimatedMonthlySpend } from '../utils/insights';
+import { actualDrawStats } from '../utils/cashflow';
+import { makeCatOf } from '../utils/classify';
 import { useMarketQuotes } from '../hooks/useMarketQuotes';
 import { useDailySnapshot } from '../hooks/useDailySnapshot';
+import { useRangeTxns } from '../hooks/useRangeTxns';
+import { monthStart } from '../utils/dateUtils';
+import PaycheckCard from '../components/PaycheckCard';
 
-export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, flows, netWorthHistory, snapshotHistory }) {
+export default function Dashboard({ data, accounts, recentTxns, holdings, netWorth, investmentsTotal, currentMonthSpend, flows, netWorthHistory, snapshotHistory, catOf, acctById }) {
   const month = toLocalMonthStr();
   const dayOfMonth = new Date().getDate();
 
@@ -50,9 +55,25 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
   };
 
   const savingsRate = flows?.savingsRate || 0;
+  // Income coverage — the decumulation headline: did this month's work cover
+  // this month's life? Under 100% isn't failure; it says how much of the month
+  // the portfolio carried, which some months is the plan.
+  const coverage = (flows?.spend || 0) > 0 ? (flows?.earned || 0) / flows.spend : null;
 
   const assets = byType.filter(g => g.side === 'asset').reduce((s, g) => s + g.total, 0);
   const liabilities = byType.filter(g => g.side === 'liability').reduce((s, g) => s + g.total, 0);
+
+  // === Actual withdrawal pace — measured over a 12-month window, not planned ===
+  const yearAgo = useMemo(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 11);
+    return monthStart(toLocalMonthStr(d));
+  }, []);
+  const yearTxns = useRangeTxns(yearAgo);
+  const draw = useMemo(() => {
+    const src = yearTxns ?? recentTxns;
+    const c = yearTxns ? makeCatOf(yearTxns, accountById, data?.userRules) : catOf;
+    return actualDrawStats(src, c || ((t) => t.category), investmentsTotal);
+  }, [yearTxns, recentTxns, accountById, data?.userRules, catOf, investmentsTotal]);
 
   // === Retirement readiness (fast Monte Carlo) ===
   const readiness = useMemo(() => {
@@ -63,18 +84,20 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
       startingBalance: r.startingBalance ?? (investmentsTotal || netWorth || 0),
       runs: 250,  // smaller for dashboard perf
     });
-    const wRate = withdrawalRate({
-      netWorth, investmentsTotal,
-      annualSpend: r.annualSpend,
-      annualIncome: (r.socialSecurity || 0), // very rough — doesn't include part-time work
-    });
-    return { successRate: sim.successRate, wRate };
+    return { successRate: sim.successRate };
   }, [data?.retirement, investmentsTotal, netWorth]);
 
-  const avgMonthlySpend = useMemo(() => estimatedMonthlySpend(recentTxns), [recentTxns]);
+  const avgMonthlySpend = useMemo(() => estimatedMonthlySpend(recentTxns, catOf), [recentTxns, catOf]);
+  // Unpaid invoices are near-cash for a consultant — count them in runway.
+  const receivables = useMemo(
+    () => (data?.business?.invoices || [])
+      .filter(i => ['drafted', 'draft', 'sent'].includes(i.status))
+      .reduce((s, i) => s + (i.amount || 0), 0),
+    [data?.business?.invoices],
+  );
   const runway = useMemo(
-    () => cashRunwayMonths({ accounts, monthlySpend: avgMonthlySpend }),
-    [accounts, avgMonthlySpend],
+    () => cashRunwayMonths({ accounts, monthlySpend: avgMonthlySpend, receivables }),
+    [accounts, avgMonthlySpend, receivables],
   );
 
   // === Live market quotes for the strong-day rebalance prompt ===
@@ -91,6 +114,7 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
   // === Actionable insights ===
   const insights = useMemo(
     () => generateInsights({
+      catOf,
       holdings, accounts, investmentsTotal, netWorth, recentTxns, netWorthHistory, data,
       monthlySpend: avgMonthlySpend, marketQuotes,
     }),
@@ -109,8 +133,11 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
     monthIncome,
     currentMonthSpend,
     retirementSuccess: readiness?.successRate ?? null,
-    withdrawalRate: readiness?.wRate ?? null,
+    withdrawalRate: draw.rate,
     cashRunwayMonths: runway,
+    coverage,
+    withdrawalRateActual: draw.rate,
+    receivables,
     avgMonthlySpend,
     byType,
     investmentsTotal,
@@ -126,20 +153,41 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
         <p className="text-slate-400 text-sm">{month}</p>
       </header>
 
-      {/* Headline numbers */}
+      {/* Headline numbers — decumulation-first: coverage, measured withdrawal, runway.
+          Savings rate is demoted to the month card below; a 25% savings target is a
+          saver's scoreboard, and drawing on the portfolio some months is the plan. */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile label="Net worth" value={money(netWorth)} big className="col-span-2 lg:col-span-1" tone={pnlClass(netWorth)} />
-        <Tile label="Assets" value={money(assets)} tone="text-emerald-400" />
-        <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
         <Tile
-          label="Savings rate (mo)"
-          value={`${(savingsRate * 100).toFixed(0)}%`}
-          tone={savingsRate >= (data?.preferences?.targetSavingsRate || 0.25) ? 'text-emerald-400' : 'text-amber-400'}
-          hint={dayOfMonth <= 10 ? `Only ${dayOfMonth} days of data — settles late-month` : 'Earned income only · excl. IRA draws'}
+          label="Income coverage (mo)"
+          value={coverage == null ? '—' : `${Math.round(coverage * 100)}%`}
+          tone={coverage == null ? 'text-slate-400' : coverage >= 1 ? 'text-emerald-400' : 'text-slate-100'}
+          hint={coverage == null ? 'No spend yet this month'
+            : coverage >= 1 ? 'Work covered the month — surplus invested'
+            : `Portfolio carried ${money(Math.max(0, (flows?.spend || 0) - (flows?.earned || 0)))} of the month`}
+        />
+        <Tile
+          label="Withdrawal rate (ttm)"
+          value={draw.rate != null && draw.annual > 0 ? pct(draw.rate, 1) : draw.annual === 0 ? '0%' : '—'}
+          tone={draw.rate == null || draw.annual === 0 ? 'text-emerald-400' : draw.rate < 0.04 ? 'text-emerald-400' : draw.rate < 0.055 ? 'text-amber-400' : 'text-rose-400'}
+          hint={draw.annual > 0
+            ? `Measured: ${money(Math.round(draw.annual))}/yr of actual draws ÷ investable (${Math.round(draw.months)} mo window)`
+            : 'No portfolio draws in the window'}
+        />
+        <Tile
+          label="Runway"
+          value={runway ? `${runway.toFixed(1)} mo` : '—'}
+          tone={runway ? (runway >= (data?.preferences?.emergencyMonths || 6) ? 'text-emerald-400' : 'text-amber-400') : 'text-slate-400'}
+          hint={avgMonthlySpend
+            ? `Cash${receivables > 0 ? ` + ${money(receivables)} unpaid invoices` : ''} ÷ ${money(avgMonthlySpend)} avg spend`
+            : 'Need transaction history'}
         />
       </section>
 
-      {/* Retirement readiness + runway */}
+      {/* This month's paycheck — settle the month, price the gap in hours and rate */}
+      <PaycheckCard flows={flows} data={data} investmentsTotal={investmentsTotal} />
+
+      {/* Retirement readiness + balance-sheet summary */}
       {readiness && (
         <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Tile
@@ -148,18 +196,8 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
             tone={readiness.successRate >= 0.9 ? 'text-emerald-400' : readiness.successRate >= 0.75 ? 'text-amber-400' : 'text-rose-400'}
             hint={`Monte Carlo survival probability to age ${data?.retirement?.endAge || 90}`}
           />
-          <Tile
-            label="Withdrawal rate"
-            value={readiness.wRate ? pct(readiness.wRate, 1) : '—'}
-            tone={(readiness.wRate || 0) < 0.04 ? 'text-emerald-400' : (readiness.wRate || 0) < 0.05 ? 'text-amber-400' : 'text-rose-400'}
-            hint="Annual portfolio draw as % of investable assets"
-          />
-          <Tile
-            label="Cash runway"
-            value={runway ? `${runway.toFixed(1)} mo` : '—'}
-            tone={runway ? (runway >= (data?.preferences?.emergencyMonths || 6) ? 'text-emerald-400' : 'text-amber-400') : 'text-slate-400'}
-            hint={avgMonthlySpend ? `At ${money(avgMonthlySpend)} avg monthly spend` : 'Need transaction history'}
-          />
+          <Tile label="Assets" value={money(assets)} tone="text-emerald-400" />
+          <Tile label="Liabilities" value={money(-liabilities)} tone="text-rose-400" />
         </section>
       )}
 
@@ -194,6 +232,9 @@ export default function Dashboard({ data, accounts, recentTxns, holdings, netWor
         <Panel title="This month's spending">
           <div className="text-3xl font-bold mono-nums">{money(currentMonthSpend)}</div>
           <p className="text-slate-400 text-sm mt-1">vs {money(monthIncome)} earned income</p>
+          {coverage != null && coverage >= 1 && (
+            <p className="text-emerald-400/90 text-xs mt-1">Savings rate {(savingsRate * 100).toFixed(0)}% of earned income</p>
+          )}
           {(flows?.retirement > 0 || flows?.refunds > 0) && (
             <div className="mt-2 pt-2 border-t border-slate-700/60 space-y-1 text-xs text-slate-400">
               {flows.retirement > 0 && (

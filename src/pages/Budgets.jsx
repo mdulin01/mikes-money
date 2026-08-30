@@ -32,7 +32,7 @@ function nextNMonths(n, fromStr = toLocalMonthStr()) {
   return out;
 }
 
-export default function Budgets({ data, recentTxns, setBudget, deleteBudget, updateConfig }) {
+export default function Budgets({ data, recentTxns, setBudget, deleteBudget, updateConfig , catOf }) {
   const toast = useToast();
   const [month, setMonth] = useState(toLocalMonthStr());
   const [applyOpen, setApplyOpen] = useState(false);
@@ -68,12 +68,13 @@ export default function Budgets({ data, recentTxns, setBudget, deleteBudget, upd
     for (const t of recentTxns) {
       if (!t.date || t.date < start || t.date > end) continue;
       if (t.amount <= 0) continue;
-      if (t.category === 'transfer') continue;
-      const key = t.category || 'uncategorized';
+      const cat = catOf ? catOf(t) : t.category;              // live rules + pair-matching
+      if (cat === 'transfer' || cat === 'taxes') continue;    // payments & taxes aren't budgetable spend
+      const key = cat || 'uncategorized';
       map[key] = (map[key] || 0) + t.amount;
     }
     return map;
-  }, [recentTxns, month]);
+  }, [recentTxns, month, catOf]);
 
   const totalBudget = Object.values(budgets).reduce((s, v) => s + (v || 0), 0);
   const totalActual = Object.values(actual).reduce((s, v) => s + v, 0);

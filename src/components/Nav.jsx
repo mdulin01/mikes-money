@@ -8,8 +8,8 @@ const GROUPS = [
   { id: 'home', label: 'Home', emoji: '📊', sections: ['dashboard'] },
   { id: 'spend', label: 'Spend', emoji: '💳', sections: ['transactions', 'budgets', 'cashflow'] },
   { id: 'invest', label: 'Invest', emoji: '📈', sections: ['holdings', 'allocation', 'retirement'] },
-  { id: 'tax', label: 'Biz/Tax', emoji: '🧾', sections: ['tax', 'business', 'rent', 'mortgages', 'scenarios'] },
-  { id: 'more', label: 'More', emoji: '⋯', sections: ['accounts', 'checkup'] },
+  { id: 'tax', label: 'Biz/Tax', emoji: '🧾', sections: ['tax', 'business', 'rent', 'mortgages'] },
+  { id: 'more', label: 'More', emoji: '⋯', sections: ['accounts', 'checkup', 'handoff'] },
 ];
 
 export default function Nav({ onLogout }) {

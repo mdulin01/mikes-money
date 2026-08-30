@@ -4,12 +4,20 @@ Personal finance app — your data, your control. Similar capabilities to Empowe
 
 ## What it does
 
-- **Dashboard** — Net worth, assets vs liabilities, monthly spend/savings rate.
+- **Dashboard** — Net worth, income coverage, measured withdrawal rate (ttm), runway
+  (cash + unpaid invoices), and a "this month, settled" paycheck card that prices any
+  gap in billable hours and in withdrawal-rate basis points.
 - **Accounts** — Plaid-linked banks/credit/investments + manual entries for home value, crypto, etc.
-- **Transactions** — Auto-sync from Plaid, searchable, recategorizable.
+- **Transactions** — Auto-sync from Plaid, searchable, recategorizable. Credit-card
+  payments are excluded from spend structurally (keyword rules + pair-matching).
 - **Budgets** — Monthly category budgets with actual-vs-plan progress.
-- **Cash Flow** — 12-month income vs spend + trend-based projection.
-- **Scenarios** — What-if models (retirement, home purchase, career change) with compounding math.
+- **Cash Flow** — 12-month income vs spend (taxes split out, refunds netted), a monthly
+  Sankey of where the money went, and a cash-balance projection.
+- **Retirement** — engagement-driven Monte Carlo (hours × rate per client, 2026 1099 tax
+  layer, actuarial Social Security, UNCC health line, Folio budget), saved scenarios side
+  by side, and a Roth-conversion/RMD/IRMAA planner with engagement-aware suggestions.
+- **Handoff** — the printable page a partner or executor would need: accounts by
+  institution, people to call, where the documents live.
 
 ## Stack
 
