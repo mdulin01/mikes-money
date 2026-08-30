@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { money, pct } from '../utils/format';
 import { classifyHolding, ASSET_CLASSES } from '../utils/assetClass';
 import { computeSectorTotals } from '../utils/sectorMap';
+import { estimatedMonthlySpend } from '../utils/insights';
+import { allocateHoldings, ASSET_CLASSES as ALLOC_CLASSES } from '../utils/assetClass';
 
 // Expense ratios for common tickers (annual %). Source: fund prospectuses.
 // Extend this list as needed — missing tickers show as "unknown".
@@ -32,19 +34,12 @@ const EXPENSE_RATIOS = {
 
 const INDEX_FUND_TICKERS = new Set(Object.keys(EXPENSE_RATIOS)); // broad passive funds exempt from single-stock concentration
 
-export default function Checkup({ holdings, accounts, data, investmentsTotal, recentTxns, netWorth }) {
-  // --- Monthly expense baseline from last 3 months ---
-  const monthlySpend = useMemo(() => {
-    const byMonth = {};
-    for (const t of recentTxns) {
-      if (!t.date || t.category === 'transfer' || t.amount <= 0) continue;
-      const m = t.date.slice(0, 7);
-      byMonth[m] = (byMonth[m] || 0) + t.amount;
-    }
-    const months = Object.values(byMonth).sort((a, b) => b - a).slice(0, 3);
-    if (!months.length) return null;
-    return months.reduce((s, v) => s + v, 0) / months.length;
-  }, [recentTxns]);
+export default function Checkup({ holdings, accounts, data, investmentsTotal, recentTxns, netWorth, catOf, updateConfig }) {
+  // --- Monthly expense baseline from last 3 months (shared live-classified estimate) ---
+  const monthlySpend = useMemo(
+    () => estimatedMonthlySpend(recentTxns, catOf),
+    [recentTxns, catOf],
+  );
 
   const cashTotal = useMemo(
     () => accounts.filter(a => a.type === 'depository').reduce((s, a) => s + (a.balance || 0), 0),

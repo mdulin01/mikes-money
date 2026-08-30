@@ -7,21 +7,27 @@ import { computeSectorTotals, SECTOR_MAP } from './sectorMap';
 import { money, pct } from './format';
 import { toLocalDateStr } from './dateUtils';
 
-export function cashRunwayMonths({ accounts, monthlySpend }) {
+export function cashRunwayMonths({ accounts, monthlySpend, receivables = 0 }) {
   if (!monthlySpend) return null;
   const cash = accounts
     .filter(a => a.type === 'depository')
     .reduce((s, a) => s + (a.balance || 0), 0);
-  return cash / monthlySpend;
+  // A semi-retired consultant's buffer is cash PLUS billed work — unpaid invoices
+  // are near-cash and excluding them understates runway (YNAB-style framing).
+  return (cash + (receivables || 0)) / monthlySpend;
 }
 
-export function estimatedMonthlySpend(recentTxns) {
-  // Average of top-3 recent months (ignores partial current month)
+export function estimatedMonthlySpend(recentTxns, catOf = (t) => t.category) {
+  // Average of top-3 recent months (ignores partial current month).
+  // catOf MUST be the live resolver (makeCatOf) — filtering on the stored category
+  // let credit-card payment legs through and overstated the burn (Rupert, Aug 2026).
   const byMonth = {};
   for (const t of recentTxns) {
+    if (!t.date || t.amount <= 0) continue;
+    const cat = catOf(t);
     // Exclude transfers and tax payments — one-time IRS/NC payments otherwise distort
     // the "normal monthly burn" baseline (and with it cash runway + savings rate).
-    if (!t.date || t.category === 'transfer' || t.category === 'taxes' || t.amount <= 0) continue;
+    if (cat === 'transfer' || cat === 'taxes') continue;
     const m = t.date.slice(0, 7);
     byMonth[m] = (byMonth[m] || 0) + t.amount;
   }
@@ -129,6 +135,7 @@ export function generateInsights({
   data,
   monthlySpend,
   marketQuotes,
+  catOf = (t) => t.category,
 }) {
   const rules = [];
 
@@ -206,7 +213,7 @@ export function generateInsights({
     const dayOfMonth = now.getDate();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const thisMonthSpend = recentTxns
-      .filter(t => (t.date || '').startsWith(thisMonth) && t.amount > 0 && t.category !== 'transfer')
+      .filter(t => (t.date || '').startsWith(thisMonth) && t.amount > 0 && !['transfer', 'taxes'].includes(catOf(t)))
       .reduce((s, t) => s + t.amount, 0);
     const projected = thisMonthSpend * (daysInMonth / Math.max(1, dayOfMonth));
     if (projected > monthlySpend * 1.2 && dayOfMonth >= 10) {

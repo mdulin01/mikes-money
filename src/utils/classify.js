@@ -43,7 +43,10 @@ const RULES = [
   // ("RECEIVED ZELLE PMT ID ... FROM MICHAEL DULIN") — without this it size-matches
   // the rent window and double-counts rent income.
   { kw: ['zelle payment to mike dulin', 'zelle payment from mike dulin', 'from michael duli', 'online banking transfer'], category: 'transfer' },
-  { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt', 'citi card online', 'citictp'], category: 'transfer' },
+  { kw: ['online transfer', 'transfer to', 'transfer from', 'zelle', 'venmo', 'cash app', 'cashapp', 'payment thank you', 'autopay', 'online payment', 'card payment', 'bill pay', 'ach pmt', 'web pmt', 'pymt', 'citi card online', 'citictp',
+         // Card-network payment descriptors that carry none of the generic words above
+         // (each one observed in the wild double-counting spend before pair-matching):
+         'applecard gsbank', 'gsbank payment', 'e-payment', 'epayment', 'epay', 'crd epay', 'synchrony bank', 'barclaycard'], category: 'transfer' },
   // ---- HOME-OFFICE BILLS (personal, partial business) ----
   { kw: ['duke energy', 'piedmont natural', 'dominion energy', 'charlotte water', 'water/sewer'], category: 'utilities', homeOffice: true },
   { kw: ['spectrum', 'at&t', 'at and t', 'att*', 'attbill', 'verizon', 't-mobile', 'tmobile', 'xfinity', 'comcast', 'google fi'], category: 'utilities', homeOffice: true },
@@ -168,3 +171,20 @@ export function merchantKeyword(txn) {
     .trim() || raw;
 }
 
+
+
+// ── Live category resolver with structural pair-matching ─────────────────────
+// One catOf for every spend surface. Order: matched credit-card-payment pair →
+// 'transfer' (structural, beats any stored/keyword answer) → effectiveCategory
+// (user rules → stored user choice → built-in keyword rules).
+// Build it ONCE per transaction window (it scans txns for pairs), then reuse.
+import { findTransferPairs } from './transferPairs';
+
+export function makeCatOf(txns, acctById, userRules) {
+  const pairIds = findTransferPairs(txns, acctById);
+  return (t) => {
+    if (t?.id && pairIds.has(t.id)) return 'transfer';
+    const c = effectiveCategory(t, acctById, userRules);
+    return c === 'uncategorized' ? null : c;
+  };
+}
